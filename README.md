@@ -13,7 +13,8 @@
 *   **Local-First Analysis**: Process multi-gigabyte JTL/CSV files entirely in the browser using Web Workers (no data upload).
 *   **Baseline Comparison**: Upload a previous test run (Baseline) alongside your current run to visualize regressions, improvements, and metric deltas.
 *   **Live Monitoring**: Watch active test files in real-time (Log Tailing) using the File System Access API.
-*   **Hybrid AI Reporting**: 
+*   **Hybrid AI Reporting & Chat**: 
+    *   **AI Chat Assistant**: Ask questions about your test data ("Why did latency spike?", "What is the error rate?").
     *   **Ollama (Local)**: Run Llama3, Mistral, or other models locally for private, offline AI analysis.
     *   **Google Gemini**: Integration for cloud-based deep-dive executive summaries.
     *   **Heuristic Engine**: Fallback rule-based analysis when no LLM is available.
@@ -67,6 +68,8 @@ timeStamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success
 
 3.  (Optional) Configure AI Features:
     
+    PerfAnalyzer now includes a **Global Settings** menu in the UI where you can switch between providers.
+
     **Option A: Ollama (Local - Recommended)**
     To use Ollama, you must run it with CORS enabled so the browser can access it.
     ```bash
@@ -78,17 +81,25 @@ timeStamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success
     ```
 
     **Option B: Google Gemini**
-    Create a `.env` file in the root:
-    ```env
-    API_KEY=your_google_gemini_api_key
-    ```
-    *You can also configure this in the UI Settings panel.*
+    You can enter your API Key directly in the application Settings menu. The key is stored only in your browser's LocalStorage.
 
 4.  Start the development server:
     ```bash
     npm start
     ```
     Access the app at `http://localhost:3000`.
+
+---
+
+## ⚙️ Configuration
+
+Click the **Settings** icon (bottom left sidebar) to access the Global Settings modal.
+
+*   **Features**: Enable or Disable the floating **AI Chat Assistant**.
+*   **AI Provider**:
+    *   **Ollama**: Set your local endpoint (default: `http://localhost:11434`) and model name (e.g., `llama3`).
+    *   **Gemini**: Enter your Google Cloud API Key.
+    *   **No AI**: Disable AI features; reports will use basic rule-based templates.
 
 ---
 

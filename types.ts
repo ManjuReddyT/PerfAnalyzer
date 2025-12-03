@@ -99,6 +99,7 @@ export interface ComparisonAnalysis {
 }
 
 export interface ProcessedData {
+  id: string; // Unique ID
   summary: TestSummary;
   timeSeries: TimeSeriesPoint[];
   labels: LabelStats[];
@@ -113,8 +114,7 @@ export interface ProcessedData {
 export interface ProjectState {
   version: string;
   timestamp: number;
-  mainData: ProcessedData;
-  baselineData?: ProcessedData | null;
+  reports: ProcessedData[];
   thresholds: { responseTime: number; errorRate: number };
   notes?: string;
 }

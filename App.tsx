@@ -11,12 +11,12 @@ import { processData } from './utils/analytics';
 import { generateSampleData } from './utils/sampleData';
 import { openFileHandle, getFileFromHandle, saveProjectFile } from './utils/liveFile';
 import { ProcessedData, ProjectState } from './types';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, Settings, X } from 'lucide-react';
 import { AIConfig } from './utils/aiAnalytics';
 
 function App() {
-  const [data, setData] = useState<ProcessedData | null>(null);
-  const [baselineData, setBaselineData] = useState<ProcessedData | null>(null);
+  const [reports, setReports] = useState<ProcessedData[]>([]);
+  const [activeReportId, setActiveReportId] = useState<string | null>(null);
   
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -24,6 +24,7 @@ function App() {
   const [activeView, setActiveView] = useState('dashboard');
   const [darkMode, setDarkMode] = useState(false);
   const [thresholds, setThresholds] = useState({ responseTime: 500, errorRate: 1.0 });
+  const [isAddingReport, setIsAddingReport] = useState(false);
 
   // Global Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -38,10 +39,9 @@ function App() {
   // Live File Monitoring State
   const [liveFileHandle, setLiveFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [lastModified, setLastModified] = useState<number>(0);
-  const [livePollInterval, setLivePollInterval] = useState<number>(5000); // Default 5s
+  const [livePollInterval, setLivePollInterval] = useState<number>(5000); 
   const pollIntervalRef = useRef<number | null>(null);
 
-  // Initialize Dark Mode based on preference or system
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -81,15 +81,14 @@ function App() {
 
   // --- Live File Polling Logic ---
   const checkLiveFile = async (force: boolean = false) => {
-      if (!liveFileHandle) return;
+      if (!liveFileHandle || !activeReportId) return;
       try {
           const file = await getFileFromHandle(liveFileHandle);
           if (force || file.lastModified > lastModified) {
              setLastModified(file.lastModified);
-             // Re-process quietly
-             processData(file, () => {}).then(newData => {
-                setData(newData);
-             });
+             // Re-process active report
+             const newData = await processData(file, () => {});
+             setReports(prev => prev.map(r => r.id === activeReportId ? { ...newData, id: r.id } : r));
           }
       } catch (err) {
           console.error("Error polling file:", err);
@@ -104,7 +103,7 @@ function App() {
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [liveFileHandle, lastModified, livePollInterval]);
+  }, [liveFileHandle, lastModified, livePollInterval, activeReportId]);
 
   const handleManualLiveRefresh = () => {
       checkLiveFile(true);
@@ -115,9 +114,22 @@ function App() {
     setLiveFileHandle(null);
   };
 
+  const handleRemoveReport = (id: string) => {
+      const newReports = reports.filter(r => r.id !== id);
+      setReports(newReports);
+      if (activeReportId === id) {
+          setActiveReportId(newReports.length > 0 ? newReports[0].id : null);
+      }
+      if (newReports.length === 0) {
+          setLiveFileHandle(null);
+          stopWatching();
+          setActiveView('dashboard');
+      }
+  };
+
   const handleReset = () => {
-    setData(null);
-    setBaselineData(null);
+    setReports([]);
+    setActiveReportId(null);
     setLiveFileHandle(null);
     stopWatching();
     setActiveView('dashboard');
@@ -126,48 +138,39 @@ function App() {
 
   // --- File Handlers ---
 
-  const handleFileUpload = async (mainFile: File, baselineFile?: File, errorFile?: File) => {
+  const handleFileUpload = async (files: File[]) => {
     setLoading(true);
     setProgress(0);
     setError(null);
-    stopWatching(); // Stop any existing live watch
+    if(isAddingReport) setIsAddingReport(false);
 
     try {
-      // Simulate slight progress for non-parsing stages
       const progressInterval = setInterval(() => {
-          setProgress(prev => {
-              if(prev >= 90) return prev;
-              return prev + 5;
-          });
+          setProgress(prev => (prev >= 90 ? prev : prev + 5));
       }, 100);
 
-      // Process Main File
-      const mainResult = await processData(mainFile, () => {});
+      const processedFiles = await Promise.all(files.map(f => processData(f, () => {})));
       
-      // Process Baseline File if exists
-      let baselineResult = null;
-      if (baselineFile) {
-        baselineResult = await processData(baselineFile, () => {});
-      }
-      
-      // Process Error File if exists (Detailed logs)
-      if (errorFile) {
-          // Skip analysis for error file to speed up
-          const errorResult = await processData(errorFile, () => {}, true);
-          mainResult.detailedFailures = errorResult.rawRows;
-      }
-
       clearInterval(progressInterval);
       setProgress(100);
       
       setTimeout(() => {
-          setData(mainResult);
-          setBaselineData(baselineResult);
+          setReports(prev => {
+              const updated = [...prev, ...processedFiles];
+              return updated.slice(0, 10);
+          });
+          
+          if (!activeReportId && processedFiles.length > 0) {
+              setActiveReportId(processedFiles[0].id);
+          } else if (files.length === 1 && reports.length > 0) {
+              setActiveReportId(processedFiles[0].id);
+          }
+
           setLoading(false);
       }, 500);
       
     } catch (err: any) {
-      setError(err.message || "Failed to parse file. Please ensure it's a valid JMeter CSV/JTL.");
+      setError(err.message || "Failed to parse file.");
       setLoading(false);
     }
   };
@@ -176,23 +179,21 @@ function App() {
     setLoading(true);
     setProgress(10);
     setError(null);
+    if(isAddingReport) setIsAddingReport(false);
     
     try {
         const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
-        }
+        if (!response.ok) throw new Error(`Failed: ${response.status} ${response.statusText}`);
         setProgress(30);
         
         const blob = await response.blob();
-        // Extract filename from URL or default
         const fileName = url.substring(url.lastIndexOf('/') + 1) || 'remote_data.csv';
         const file = new File([blob], fileName, { type: blob.type });
         
         setProgress(50);
-        await handleFileUpload(file);
+        await handleFileUpload([file]);
     } catch (err: any) {
-        setError(`Failed to load URL: ${err.message}. Ensure the server supports CORS.`);
+        setError(`Failed to load URL: ${err.message}`);
         setLoading(false);
     }
   };
@@ -204,29 +205,24 @@ function App() {
       setLiveFileHandle(handle);
       setLastModified(file.lastModified);
       
-      // Initial Load
-      await handleFileUpload(file);
+      // Initial Load as a new report
+      await handleFileUpload([file]);
     } catch (err) {
-      // User likely cancelled picker, ignore
       console.log("Watch cancelled or failed", err);
     }
   };
 
   const handleSaveSession = async () => {
-    if (!data) return;
-
     const session: ProjectState = {
-      version: '1.0',
+      version: '1.1',
       timestamp: Date.now(),
-      mainData: data,
-      baselineData: baselineData,
+      reports: reports,
       thresholds: thresholds,
-      notes: '' // Could add support for saving report notes here too
+      notes: ''
     };
 
-    const fileName = `perf-session-${data.summary.fileName.replace(/\./g, '_')}.perf`;
+    const fileName = `perf-session-${new Date().toISOString().slice(0,10)}.perf`;
     const json = JSON.stringify(session);
-    
     await saveProjectFile(json, fileName);
   };
 
@@ -236,12 +232,17 @@ function App() {
       const text = await file.text();
       const session: ProjectState = JSON.parse(text);
       
-      if (!session.mainData || !session.version) {
-        throw new Error("Invalid session file format.");
+      if ((session as any).mainData) {
+          const legacy = session as any;
+          setReports([legacy.mainData, ...(legacy.baselineData ? [legacy.baselineData] : [])]);
+          setActiveReportId(legacy.mainData.id);
+      } else if (session.reports) {
+          setReports(session.reports);
+          if (session.reports.length > 0) setActiveReportId(session.reports[0].id);
+      } else {
+          throw new Error("Invalid session format");
       }
 
-      setData(session.mainData);
-      setBaselineData(session.baselineData || null);
       setThresholds(session.thresholds || { responseTime: 500, errorRate: 1.0 });
       setLoading(false);
       stopWatching();
@@ -253,21 +254,22 @@ function App() {
   };
 
   const handleUseSample = () => {
-    // Generate both Current and Baseline for a better demo experience
     const mainSample = generateSampleData('current');
     const baselineSample = generateSampleData('baseline');
-    handleFileUpload(mainSample, baselineSample);
+    handleFileUpload([mainSample, baselineSample]);
   };
 
+  const activeReport = reports.find(r => r.id === activeReportId) || null;
+
   const renderContent = () => {
-    if (!data) return null;
+    if (!activeReport) return null;
 
     switch (activeView) {
       case 'dashboard':
         return (
             <DashboardView 
-                data={data} 
-                baselineData={baselineData}
+                data={activeReport} 
+                allReports={reports}
                 onNavigate={setActiveView} 
                 thresholds={thresholds} 
                 onUpdateThresholds={setThresholds} 
@@ -279,40 +281,23 @@ function App() {
             />
         );
       case 'report':
-        return <ReportView data={data} baselineData={baselineData} thresholds={thresholds} aiConfig={aiConfig} />;
+        return <ReportView data={activeReport} baselineData={reports.find(r => r.id !== activeReportId)} thresholds={thresholds} aiConfig={aiConfig} />;
       case 'about':
         return <AboutView />;
       default:
-        return (
-            <DashboardView 
-                data={data} 
-                baselineData={baselineData}
-                onNavigate={setActiveView} 
-                thresholds={thresholds} 
-                onUpdateThresholds={setThresholds} 
-                onSaveSession={handleSaveSession}
-                isLive={!!liveFileHandle}
-            />
-        );
+        return null;
     }
   };
 
-  if (!data) {
+  // If no reports loaded, show initial upload screen
+  if (reports.length === 0) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col transition-colors duration-200">
         <div className="absolute top-0 right-0 p-4 flex gap-2">
-           <button 
-             onClick={() => setIsSettingsOpen(true)}
-             className="p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
-             title="Global Settings"
-           >
+           <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
              <Settings className="w-5 h-5 text-indigo-500" />
            </button>
-           <button 
-             onClick={toggleDarkMode}
-             className="p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
-             title="Toggle Dark Mode"
-           >
+           <button onClick={toggleDarkMode} className="p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
              {darkMode ? <Moon className="w-5 h-5 text-blue-400" /> : <Sun className="w-5 h-5 text-yellow-500" />}
            </button>
         </div>
@@ -326,9 +311,7 @@ function App() {
           progress={progress}
           error={error} 
         />
-        {/* Render chat if enabled, passing empty context for generic help */}
         {isChatEnabled && <ChatWidget contextData={null} config={aiConfig} />}
-        
         <GlobalSettings 
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)}
@@ -346,15 +329,17 @@ function App() {
       <Layout 
         activeView={activeView} 
         onNavigate={setActiveView} 
-        fileName={data.summary.fileName}
-        baselineName={baselineData?.summary.fileName}
+        reports={reports}
+        activeReportId={activeReportId}
+        onSelectReport={setActiveReportId}
+        onRemoveReport={handleRemoveReport}
+        onAddReport={() => setIsAddingReport(true)}
         darkMode={darkMode}
         toggleDarkMode={toggleDarkMode}
-        onReset={handleReset}
         onOpenSettings={() => setIsSettingsOpen(true)}
       >
         {renderContent()}
-        {isChatEnabled && <ChatWidget contextData={data} config={aiConfig} />}
+        {isChatEnabled && <ChatWidget contextData={activeReport} config={aiConfig} />}
       </Layout>
       
       <GlobalSettings 
@@ -365,9 +350,31 @@ function App() {
         chatEnabled={isChatEnabled}
         onToggleChat={toggleChat}
       />
+
+      {/* Add Report Modal */}
+      {isAddingReport && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
+              <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-6 w-full max-w-lg border border-slate-200 dark:border-slate-800">
+                  <button onClick={() => setIsAddingReport(false)} className="absolute top-4 right-4 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500">
+                      <X className="w-5 h-5" />
+                  </button>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 text-center">Add Report</h3>
+                  <FileUpload 
+                    onFileUpload={handleFileUpload}
+                    onUrlUpload={handleUrlUpload}
+                    onSampleData={handleUseSample}
+                    onWatchLive={handleWatchLive}
+                    onLoadSession={handleLoadSession}
+                    isLoading={loading} 
+                    progress={progress}
+                    error={error} 
+                    isCompact={true}
+                  />
+              </div>
+          </div>
+      )}
     </>
   );
 }
 
 export default App;
-import { Settings } from 'lucide-react';

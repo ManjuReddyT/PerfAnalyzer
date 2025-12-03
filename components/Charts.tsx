@@ -22,6 +22,7 @@ const COLORS = {
 };
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const DYNAMIC_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#84cc16'];
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
@@ -35,16 +36,16 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         {/* Render plotted items first */}
         {payload.map((entry: any, index: number) => (
           <div key={index} className="flex items-center justify-between gap-4 mb-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 max-w-[180px]">
                {/* Dashed line indicator for baseline */}
                {entry.dataKey === 'baselineAvg' ? (
-                   <div className="w-4 h-0.5 border-t-2 border-dashed border-slate-400"></div>
+                   <div className="w-4 h-0.5 border-t-2 border-dashed border-slate-400 flex-shrink-0"></div>
                ) : (
-                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
                )}
-               <span className="text-slate-500 dark:text-slate-400 capitalize">{entry.name}:</span>
+               <span className="text-slate-500 dark:text-slate-400 capitalize truncate" title={entry.name}>{entry.name}:</span>
             </div>
-            <span className="font-mono font-medium text-slate-900 dark:text-white">
+            <span className="font-mono font-medium text-slate-900 dark:text-white flex-shrink-0">
               {typeof entry.value === 'number' ? entry.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : entry.value}
               {entry.unit || ''}
             </span>
@@ -73,6 +74,18 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+// Custom Legend for handling long labels
+const renderTruncatedLegend = (value: string, entry: any) => {
+    const { color } = entry;
+    const MAX_LENGTH = 20;
+    const truncated = value.length > MAX_LENGTH ? `${value.substring(0, MAX_LENGTH)}...` : value;
+    return (
+        <span style={{ color, fontSize: '12px', fontWeight: 500 }} title={value}>
+            {truncated}
+        </span>
+    );
+};
+
 // Dual Axis Chart: Response Time (Lines) vs Active Users (Area)
 // Added baseline support
 export const ResponseTimeTrendChart = ({ data, enableBrush = false, threshold, baselineData }: { data: any[], enableBrush?: boolean, threshold?: number, baselineData?: any[] }) => {
@@ -97,7 +110,7 @@ export const ResponseTimeTrendChart = ({ data, enableBrush = false, threshold, b
           <YAxis yAxisId="right" orientation="right" stroke={COLORS.users} fontSize={12} tick={{fill: COLORS.text}} label={{ value: 'Active Users', angle: 90, position: 'insideRight', fill: COLORS.text }} />
           
           <Tooltip content={<CustomTooltip />} />
-          <Legend verticalAlign="top" height={36}/>
+          <Legend verticalAlign="top" height={36} formatter={renderTruncatedLegend}/>
           
           <Area yAxisId="right" type="monotone" dataKey="activeThreads" name="Active Users" fill={COLORS.users} stroke={COLORS.users} fillOpacity={0.2} />
           
@@ -129,19 +142,45 @@ export const ResponseTimeTrendChart = ({ data, enableBrush = false, threshold, b
     );
 };
 
-export const ResponseTimeChart = ({ data, threshold }: { data: any[], threshold?: number }) => (
+export const ResponseTimeChart = ({ 
+  data, 
+  threshold, 
+  series 
+}: { 
+  data: any[], 
+  threshold?: number, 
+  series?: { key: string, name: string, color?: string }[] 
+}) => (
   <ResponsiveContainer width="100%" height={400}>
     <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
       <YAxis stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} label={{ value: 'ms', angle: -90, position: 'insideLeft', fill: COLORS.text }} />
       <Tooltip content={<CustomTooltip />} />
-      <Legend />
-      <Line type="monotone" dataKey="avgElapsed" name="Average" stroke={COLORS.avg} strokeWidth={2} dot={false} />
-      <Line type="monotone" dataKey="p50" name="Median (P50)" stroke={COLORS.p50} strokeWidth={2} dot={false} />
-      <Line type="monotone" dataKey="p90" name="90th Percentile" stroke={COLORS.p90} strokeWidth={1.5} dot={false} />
-      <Line type="monotone" dataKey="p95" name="95th Percentile" stroke={COLORS.p95} strokeWidth={1.5} dot={false} />
-      <Line type="monotone" dataKey="p99" name="99th Percentile" stroke={COLORS.p99} strokeWidth={1.5} dot={false} />
+      <Legend formatter={renderTruncatedLegend} />
+      
+      {series ? (
+          series.map((s, idx) => (
+             <Line 
+                key={s.key} 
+                type="monotone" 
+                dataKey={s.key} 
+                name={s.name} 
+                stroke={s.color || DYNAMIC_COLORS[idx % DYNAMIC_COLORS.length]} 
+                strokeWidth={2} 
+                dot={false} 
+             />
+          ))
+      ) : (
+          <>
+            <Line type="monotone" dataKey="avgElapsed" name="Average" stroke={COLORS.avg} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="p50" name="Median (P50)" stroke={COLORS.p50} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="p90" name="90th Percentile" stroke={COLORS.p90} strokeWidth={1.5} dot={false} />
+            <Line type="monotone" dataKey="p95" name="95th Percentile" stroke={COLORS.p95} strokeWidth={1.5} dot={false} />
+            <Line type="monotone" dataKey="p99" name="99th Percentile" stroke={COLORS.p99} strokeWidth={1.5} dot={false} />
+          </>
+      )}
+
       {threshold && (
         <ReferenceLine y={threshold} label={{ value: `Threshold: ${threshold}ms`, position: 'top', fill: 'red', fontSize: 10 }} stroke="red" strokeDasharray="3 3" />
       )}
@@ -156,7 +195,7 @@ export const TransactionTimeChart = ({ data }: { data: any[] }) => (
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
       <YAxis stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} label={{ value: 'ms', angle: -90, position: 'insideLeft', fill: COLORS.text }} />
       <Tooltip content={<CustomTooltip />} />
-      <Legend />
+      <Legend formatter={renderTruncatedLegend} />
       <Line type="monotone" dataKey="avgElapsed" name="Avg Response" stroke={COLORS.avg} strokeWidth={2} dot={false} />
       <Line type="monotone" dataKey="p50" name="Median (P50)" stroke={COLORS.p50} strokeWidth={2} dot={false} />
       <Line type="monotone" dataKey="p90" name="P90" stroke={COLORS.p90} strokeWidth={1.5} dot={false} />
@@ -172,7 +211,7 @@ export const ThroughputChart = ({ data }: { data: any[] }) => (
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
       <YAxis stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} label={{ value: 'req/sec', angle: -90, position: 'insideLeft', fill: COLORS.text }} />
       <Tooltip content={<CustomTooltip />} />
-      <Legend />
+      <Legend formatter={renderTruncatedLegend} />
       <Area type="monotone" dataKey="throughput" name="Requests/Sec" stroke={COLORS.bar} fill={COLORS.bar} fillOpacity={0.3} />
     </AreaChart>
   </ResponsiveContainer>
@@ -200,7 +239,7 @@ export const ErrorRateChart = ({ data, threshold }: { data: any[], threshold?: n
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
       <YAxis stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} unit="%" />
       <Tooltip content={<CustomTooltip />} />
-      <Legend />
+      <Legend formatter={renderTruncatedLegend} />
       <Line type="monotone" dataKey="errorRate" name="Error Rate %" stroke={COLORS.error} strokeWidth={2} dot={false} />
       {threshold && (
         <ReferenceLine y={threshold} label={{ value: `Max: ${threshold}%`, position: 'top', fill: COLORS.error, fontSize: 10 }} stroke={COLORS.error} strokeDasharray="3 3" />
@@ -216,7 +255,7 @@ export const ErrorTrendChart = ({ data }: { data: any[] }) => (
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
       <YAxis stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} />
       <Tooltip content={<CustomTooltip />} />
-      <Legend />
+      <Legend formatter={renderTruncatedLegend} />
       <Bar dataKey="errorCount" name="Error Count" fill={COLORS.error} stackId="a" />
     </BarChart>
   </ResponsiveContainer>
@@ -229,7 +268,7 @@ export const LatencyCompositionChart = ({ data }: { data: any[] }) => (
         <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
         <YAxis stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} />
         <Tooltip content={<CustomTooltip />} />
-        <Legend />
+        <Legend formatter={renderTruncatedLegend} />
         <Area type="monotone" dataKey="avgConnect" stackId="1" stroke="#8884d8" fill="#8884d8" name="Connect Time" />
         <Area type="monotone" dataKey="avgLatency" stackId="1" stroke="#82ca9d" fill="#82ca9d" name="Latency" />
         <Area type="monotone" dataKey="avgElapsed" stackId="1" stroke="#ffc658" fill="#ffc658" name="Total Time" fillOpacity={0.1} strokeDasharray="3 3" />
@@ -249,14 +288,14 @@ export const PieDistributionChart = ({ data }: { data: any[] }) => (
         fill="#8884d8"
         paddingAngle={5}
         dataKey="value"
-        label={({name, percent}) => `${name} (${(percent * 100).toFixed(0)}%)`}
+        label={({name, percent}) => `${name.length > 15 ? name.substring(0, 15) + '...' : name} (${(percent * 100).toFixed(0)}%)`}
       >
         {data.map((entry, index) => (
           <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
         ))}
       </Pie>
       <Tooltip />
-      <Legend />
+      <Legend formatter={renderTruncatedLegend} />
     </PieChart>
   </ResponsiveContainer>
 );
@@ -296,9 +335,9 @@ export const DeltaBarChart = ({ data }: { data: any[] }) => (
     <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={COLORS.grid} />
       <XAxis type="number" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} />
-      <YAxis type="category" dataKey="name" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} width={100} />
+      <YAxis type="category" dataKey="name" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} width={100} tickFormatter={(val) => val.length > 15 ? val.substring(0, 15) + '...' : val} />
       <Tooltip cursor={{fill: 'transparent'}} />
-      <Legend />
+      <Legend formatter={renderTruncatedLegend} />
       <Bar dataKey="delta" name="Diff (ms)">
         {data.map((entry, index) => (
           <Cell key={`cell-${index}`} fill={entry.delta > 0 ? COLORS.error : COLORS.success} />

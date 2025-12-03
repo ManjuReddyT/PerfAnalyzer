@@ -76,7 +76,7 @@ Context Data:
         } else if (config.provider === 'ollama') {
             await handleOllamaChat(userMessage);
         } else {
-             setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "AI features are currently disabled or set to Heuristic. Please select Ollama or Gemini in Settings." }]);
+             setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "AI features are currently disabled. Please select a provider in Settings." }]);
         }
     } catch (error: any) {
         console.error("Chat Error:", error);
@@ -152,7 +152,7 @@ Context Data:
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 p-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg transition-transform hover:scale-110 z-50 flex items-center gap-2"
+        className="fixed bottom-6 right-6 p-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg transition-transform hover:scale-110 z-[49] flex items-center gap-2"
         aria-label="Open AI Chat"
       >
         <MessageSquare className="w-6 h-6" />
@@ -164,7 +164,7 @@ Context Data:
   const isConfigValid = config.provider === 'ollama' ? !!config.ollamaUrl : (config.provider === 'gemini' ? !!config.geminiKey : false);
 
   return (
-    <div className="fixed bottom-6 right-6 w-[90vw] sm:w-[400px] h-[500px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 overflow-hidden">
+    <div className="fixed bottom-6 right-6 w-[90vw] sm:w-[400px] h-[500px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col z-[50] animate-in slide-in-from-bottom-5 fade-in duration-300 overflow-hidden">
       {/* Header */}
       <div className="p-4 bg-indigo-600 text-white flex justify-between items-center">
         <div className="flex items-center gap-2">
@@ -209,7 +209,7 @@ Context Data:
       <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
         {!isConfigValid && config.provider !== 'heuristic' ? (
             <div className="text-xs text-center text-amber-600 dark:text-amber-500 p-2 bg-amber-50 dark:bg-amber-900/20 rounded">
-                Configuration missing. Please check Settings.
+                AI Config invalid. Please check Global Settings.
             </div>
         ) : (
             <div className="flex gap-2">

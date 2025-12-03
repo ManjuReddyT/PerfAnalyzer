@@ -19,14 +19,14 @@ import {
   Activity, Clock, AlertTriangle, TrendingUp, Download, Printer, 
   ArrowRight, Settings, ChevronDown, ChevronUp, Filter, BarChart, 
   AlertCircle, Layers, List, ArrowDown, ArrowUp, Save, Sliders, RotateCcw,
-  Bug, Search, X, Code, FileText, MousePointerClick, RefreshCw
+  Bug, Search, RefreshCw, GitCompare, Code, FileText, MousePointerClick, ToggleLeft, ToggleRight
 } from 'lucide-react';
-import { formatDuration, analyzeRows, calculateComparison } from '../utils/analytics';
+import { formatDuration, analyzeRows, calculateComparison, generateLabelTimeSeries } from '../utils/analytics';
 import { TransactionsView } from './TransactionsView';
 
 interface DashboardViewProps {
   data: ProcessedData;
-  baselineData?: ProcessedData | null;
+  allReports: ProcessedData[]; // All loaded reports for comparison list
   onNavigate?: (view: string) => void;
   thresholds: { responseTime: number; errorRate: number };
   onUpdateThresholds: (t: { responseTime: number; errorRate: number }) => void;
@@ -241,7 +241,7 @@ const ErrorInspector = ({ failures }: { failures: JmeterRow[] }) => {
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ 
   data, 
-  baselineData, 
+  allReports, 
   onNavigate, 
   thresholds, 
   onUpdateThresholds, 
@@ -255,10 +255,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>([]); // Empty = All
   const [selectedResponseCodes, setSelectedResponseCodes] = useState<string[]>([]); // Empty = All
   const [showThresholds, setShowThresholds] = useState(false);
+  const [selectedBaselineId, setSelectedBaselineId] = useState<string>(''); // Comparison Selection
+  
+  // Chart Modes
+  const [chartMode, setChartMode] = useState<'aggregate' | 'byLabel'>('aggregate');
   
   // Timeline Filter State
   const [timelineRange, setTimelineRange] = useState<{start: number, end: number} | null>(null);
-  const [timelineKey, setTimelineKey] = useState(0); // Key to force re-render/reset of brush
+  const [timelineKey, setTimelineKey] = useState(0); 
+
+  // Derived Baseline Data
+  const baselineData = useMemo(() => {
+      if (!selectedBaselineId) return null;
+      return allReports.find(r => r.id === selectedBaselineId) || null;
+  }, [selectedBaselineId, allReports]);
 
   // Extract unique options
   const uniqueLabels = useMemo(() => {
@@ -274,17 +284,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Handle Timeline Brush Changes
   const handleTimelineChange = useCallback((range: {startIndex?: number, endIndex?: number}) => {
      if (range.startIndex !== undefined && range.endIndex !== undefined && data.timeSeries.length > 0) {
-        // Map chart indices to actual timestamps
         const startPoint = data.timeSeries[range.startIndex];
         const endPoint = data.timeSeries[range.endIndex];
         if (startPoint && endPoint) {
-            // Convert chart seconds back to original timestamps approx
-            // Or better, use the row data if available or rely on the time value
-            // Since timeSeries.time is relative seconds, and we have summary.startTime
             const absStartTime = data.summary.startTime + (startPoint.time * 1000);
             const absEndTime = data.summary.startTime + (endPoint.time * 1000);
-            
-            // Add a small buffer to ensure we catch the bucket
             setTimelineRange({ start: absStartTime - 100, end: absEndTime + 1000 });
         }
      }
@@ -292,35 +296,65 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleResetTimeline = () => {
     setTimelineRange(null);
-    setTimelineKey(prev => prev + 1); // Increment key to force Chart component to re-mount and reset Brush
+    setTimelineKey(prev => prev + 1); 
   };
 
   // Memoize the filtered data
-  const displayData = useMemo(() => {
+  const filteredRawRows = useMemo(() => {
     const isAllTransactions = selectedTransactions.length === 0 || selectedTransactions.length === uniqueLabels.length;
     const isAllCodes = selectedResponseCodes.length === 0 || selectedResponseCodes.length === uniqueResponseCodes.length;
     const isAllTime = timelineRange === null;
 
-    if (isAllTransactions && isAllCodes && isAllTime) return data;
-    
-    // Filter raw rows
-    const filteredRows = data.rawRows.filter(r => {
+    if (isAllTransactions && isAllCodes && isAllTime) return data.rawRows;
+
+    return data.rawRows.filter(r => {
       const labelMatch = isAllTransactions || selectedTransactions.includes(r.label);
       const codeMatch = isAllCodes || selectedResponseCodes.includes(String(r.responseCode));
-      // Timeline filter
       const timeMatch = isAllTime || (r.timeStamp >= timelineRange.start && r.timeStamp <= timelineRange.end);
-      
       return labelMatch && codeMatch && timeMatch;
     });
+  }, [data.rawRows, selectedTransactions, selectedResponseCodes, timelineRange, uniqueLabels, uniqueResponseCodes]);
 
-    if (filteredRows.length === 0) {
-      // Return empty structure if everything filtered out
+  const displayData = useMemo(() => {
+    if (filteredRawRows.length === 0) {
       return { ...data, summary: { ...data.summary, totalRequests: 0 }, timeSeries: [], labels: [], errors: [], rawRows: [] };
     }
+    return analyzeRows(filteredRawRows, data.summary.fileName);
+  }, [filteredRawRows, data.summary.fileName, data]);
 
-    // Re-run analysis on filtered subset
-    return analyzeRows(filteredRows, data.summary.fileName);
-  }, [data, selectedTransactions, selectedResponseCodes, timelineRange, uniqueLabels, uniqueResponseCodes]);
+  // Memoize data for "Group by Label" chart mode
+  const labelChartData = useMemo(() => {
+      if (chartMode !== 'byLabel' || filteredRawRows.length === 0) return { data: [], series: [] };
+      
+      const timeSeries = generateLabelTimeSeries(
+          filteredRawRows, 
+          displayData.summary.startTime, 
+          displayData.summary.endTime
+      );
+      
+      // Determine which labels to show (either from filter or top 5 by count if all selected)
+      let activeLabels = selectedTransactions.length > 0 
+          ? selectedTransactions 
+          : uniqueLabels.slice(0, 5); // Fallback to first 5 if none selected, or user can select specific
+      
+      // If user hasn't filtered labels, pick top 5 by volume to avoid messy chart
+      if (selectedTransactions.length === 0) {
+          const counts = new Map<string, number>();
+          filteredRawRows.forEach(r => counts.set(r.label, (counts.get(r.label) || 0) + 1));
+          activeLabels = Array.from(counts.entries())
+              .sort((a,b) => b[1] - a[1])
+              .slice(0, 5)
+              .map(e => e[0]);
+      }
+
+      const series = activeLabels.map(label => ({
+          key: label,
+          name: label
+      }));
+
+      return { data: timeSeries, series };
+  }, [chartMode, filteredRawRows, displayData.summary.startTime, displayData.summary.endTime, selectedTransactions, uniqueLabels]);
+
 
   // Calculate comparison if baseline exists
   const comparison = useMemo(() => {
@@ -328,7 +362,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return calculateComparison(displayData.summary, baselineData.summary);
   }, [displayData.summary, baselineData]);
 
-  // Comparison Analysis - Top Regressions / Improvements
+  // Comparison Analysis
   const regressionAnalysis = useMemo(() => {
     if (!baselineData || !comparison) return null;
     
@@ -344,13 +378,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         };
     }).filter(d => d !== null);
 
-    // Top 5 Degradations (Positive Delta)
     const regressions = [...deltas]
-        .filter(d => d!.delta > 10) // Filter out noise
+        .filter(d => d!.delta > 10) 
         .sort((a,b) => b!.delta - a!.delta)
         .slice(0, 5);
 
-     // Top 5 Improvements (Negative Delta)
     const improvements = [...deltas]
         .filter(d => d!.delta < -10)
         .sort((a,b) => a!.delta - b!.delta)
@@ -372,7 +404,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     link.click();
   };
 
-  // Format Timestamps
   const startDateStr = new Date(summary.startTime).toLocaleString();
   const endDateStr = new Date(summary.endTime).toLocaleString();
 
@@ -389,7 +420,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <span className="w-2 h-2 rounded-full bg-red-500"></span>
                             LIVE
                         </span>
-                        
                         {/* Live Controls */}
                         {onSetPollInterval && (
                             <div className="flex items-center gap-1 border-l border-red-200 dark:border-red-800 pl-2">
@@ -405,7 +435,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 </select>
                             </div>
                         )}
-                        
                          {onForceRefresh && (
                             <button 
                                 onClick={onForceRefresh}
@@ -417,16 +446,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         )}
                     </div>
                 )}
-                 {baselineData && (
-                    <span className="flex items-center gap-2 text-sm font-normal text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-md border border-blue-200 dark:border-blue-900">
-                        <ArrowRight className="w-4 h-4" />
-                        VS Baseline
-                    </span>
-                )}
             </h2>
          </div>
 
-         <div className="flex flex-wrap gap-2">
+         <div className="flex flex-wrap gap-2 items-center">
+            {/* Compare With Dropdown */}
+            {allReports.length > 1 && (
+                <div className="relative">
+                    <select 
+                        value={selectedBaselineId}
+                        onChange={(e) => setSelectedBaselineId(e.target.value)}
+                        className="appearance-none pl-3 pr-8 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                    >
+                        <option value="">Compare with...</option>
+                        {allReports.filter(r => r.id !== data.id).map(r => (
+                            <option key={r.id} value={r.id}>Vs: {r.summary.fileName}</option>
+                        ))}
+                    </select>
+                    <GitCompare className="absolute right-2.5 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+            )}
+
             <button 
               onClick={onSaveSession}
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
@@ -566,7 +606,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Tab Content */}
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-        
         {/* === OVERVIEW TAB === */}
         {activeTab === 'overview' && (
           <div className="space-y-6 pt-4">
@@ -663,8 +702,52 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {activeTab === 'charts' && (
            <div className="space-y-6 pt-4">
               <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-6">Response Time Percentiles</h3>
-                 <ResponseTimeChart data={displayData.timeSeries} threshold={thresholds.responseTime} />
+                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                     <div>
+                        <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Response Time Analysis</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                          {chartMode === 'aggregate' ? 'Showing percentiles for aggregate traffic.' : 'Comparing Average Response Time per transaction.'}
+                        </p>
+                     </div>
+                     <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-slate-700">
+                         <button 
+                            onClick={() => setChartMode('aggregate')}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${chartMode === 'aggregate' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                         >
+                            <BarChart className="w-3.5 h-3.5" />
+                            Aggregate Stats
+                         </button>
+                         <button 
+                            onClick={() => setChartMode('byLabel')}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${chartMode === 'byLabel' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                         >
+                            <List className="w-3.5 h-3.5" />
+                            Compare Labels
+                         </button>
+                     </div>
+                 </div>
+                 
+                 {chartMode === 'aggregate' ? (
+                     <ResponseTimeChart data={displayData.timeSeries} threshold={thresholds.responseTime} />
+                 ) : (
+                     <div className="relative">
+                         {labelChartData.series.length === 0 ? (
+                             <div className="h-[400px] flex items-center justify-center text-slate-400">
+                                 No data available for selected filters.
+                             </div>
+                         ) : (
+                             <ResponseTimeChart 
+                                data={labelChartData.data} 
+                                series={labelChartData.series} 
+                                threshold={thresholds.responseTime} 
+                             />
+                         )}
+                         {/* Legend Hint for Comparison Mode */}
+                         <div className="text-xs text-center text-slate-400 mt-2">
+                             Showing Average Response Time for top/selected transactions.
+                         </div>
+                     </div>
+                 )}
               </div>
               <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                  <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-6">Throughput (Hits per Second)</h3>

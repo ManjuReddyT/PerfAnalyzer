@@ -1,16 +1,19 @@
 
 import React, { useState } from 'react';
-import { Activity, BarChart2, Printer, Sun, Moon, X, Info, Menu, FileText, UploadCloud, Settings } from 'lucide-react';
+import { Activity, BarChart2, Printer, Sun, Moon, X, Info, Menu, FileText, UploadCloud, Settings, Trash2, Plus, FileBarChart } from 'lucide-react';
+import { ProcessedData } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
   activeView: string;
   onNavigate: (view: string) => void;
-  fileName?: string;
-  baselineName?: string;
+  reports: ProcessedData[];
+  activeReportId: string | null;
+  onSelectReport: (id: string) => void;
+  onRemoveReport: (id: string) => void;
+  onAddReport: () => void; // Opens upload modal
   darkMode: boolean;
   toggleDarkMode: () => void;
-  onReset: () => void;
   onOpenSettings: () => void;
 }
 
@@ -32,11 +35,13 @@ export const Layout: React.FC<LayoutProps> = ({
   children, 
   activeView, 
   onNavigate, 
-  fileName, 
-  baselineName, 
+  reports,
+  activeReportId,
+  onSelectReport,
+  onRemoveReport,
+  onAddReport,
   darkMode, 
   toggleDarkMode,
-  onReset,
   onOpenSettings
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -59,7 +64,7 @@ export const Layout: React.FC<LayoutProps> = ({
       {/* Sidebar */}
       <aside 
         className={`
-          fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-white flex flex-col shadow-xl 
+          fixed inset-y-0 left-0 z-40 w-72 bg-slate-900 text-white flex flex-col shadow-xl 
           transition-transform duration-300 ease-in-out lg:static lg:translate-x-0
           ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
@@ -81,7 +86,8 @@ export const Layout: React.FC<LayoutProps> = ({
           </button>
         </div>
 
-        <nav className="flex-1 py-6 space-y-1 overflow-y-auto">
+        {/* Main Navigation */}
+        <nav className="py-4 space-y-1">
           <NavItem
             id="dashboard"
             label="Dashboard"
@@ -105,6 +111,53 @@ export const Layout: React.FC<LayoutProps> = ({
           />
         </nav>
 
+        {/* Reports List */}
+        <div className="flex-1 overflow-y-auto px-4 py-2 border-t border-slate-800">
+            <div className="flex items-center justify-between mb-3 px-2">
+                <span className="text-xs font-bold uppercase text-slate-500 tracking-wider">Loaded Reports</span>
+                <button 
+                    onClick={onAddReport}
+                    className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
+                    title="Add another report"
+                >
+                    <Plus className="w-4 h-4" />
+                </button>
+            </div>
+            
+            <div className="space-y-2">
+                {reports.map(report => (
+                    <div 
+                        key={report.id}
+                        className={`group relative flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
+                            report.id === activeReportId 
+                            ? 'bg-slate-800 border-blue-600 shadow-md' 
+                            : 'bg-slate-900 border-slate-800 hover:bg-slate-800 hover:border-slate-700'
+                        }`}
+                        onClick={() => onSelectReport(report.id)}
+                    >
+                        <FileBarChart className={`w-5 h-5 flex-shrink-0 ${report.id === activeReportId ? 'text-blue-400' : 'text-slate-500'}`} />
+                        <div className="min-w-0 flex-1">
+                            <div className={`text-sm font-medium truncate ${report.id === activeReportId ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>
+                                {report.summary.fileName}
+                            </div>
+                            <div className="text-[10px] text-slate-500 truncate">
+                                {new Date(report.summary.startTime).toLocaleString()}
+                            </div>
+                        </div>
+                        {reports.length > 0 && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onRemoveReport(report.id); }}
+                                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-900/50 hover:text-red-400 text-slate-500 rounded transition-all"
+                                title="Remove Report"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+
         <div className="p-4 border-t border-slate-800 space-y-4">
            {/* Global Settings */}
            <button 
@@ -123,48 +176,6 @@ export const Layout: React.FC<LayoutProps> = ({
              <span className="text-sm font-medium">Dark Mode</span>
              {darkMode ? <Moon className="w-4 h-4 text-blue-400" /> : <Sun className="w-4 h-4 text-yellow-400" />}
            </button>
-
-          {fileName ? (
-            <div className="p-3 bg-slate-800 rounded-lg border border-slate-700 space-y-2 relative group animate-in fade-in slide-in-from-bottom-2">
-              <div className="flex items-center justify-between mb-1">
-                 <div className="flex items-center gap-2 text-slate-400">
-                    <FileText className="w-4 h-4" />
-                    <span className="text-xs font-semibold uppercase">Current File</span>
-                 </div>
-                 <button 
-                    onClick={onReset}
-                    className="text-slate-500 hover:text-white hover:bg-red-500/20 p-1 rounded transition-colors"
-                    title="Close File & New Upload"
-                 >
-                    <X className="w-3.5 h-3.5" />
-                 </button>
-              </div>
-              <p className="text-sm font-medium text-white truncate" title={fileName}>
-                {fileName}
-              </p>
-              
-              {baselineName && (
-                  <>
-                    <div className="w-full h-px bg-slate-700 my-2"></div>
-                    <div className="flex items-center gap-2 text-blue-400 mb-1">
-                        <FileText className="w-4 h-4" />
-                        <span className="text-xs font-semibold uppercase">Baseline File</span>
-                    </div>
-                    <p className="text-sm font-medium text-white truncate" title={baselineName}>
-                        {baselineName}
-                    </p>
-                  </>
-              )}
-            </div>
-          ) : (
-             <button 
-                onClick={onReset}
-                className="w-full flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium justify-center"
-             >
-                <UploadCloud className="w-4 h-4" />
-                Upload New File
-             </button>
-          )}
         </div>
       </aside>
 

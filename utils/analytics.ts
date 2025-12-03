@@ -39,17 +39,69 @@ export const calculateComparison = (current: TestSummary, baseline: TestSummary)
     };
 };
 
+// Generate time series data grouped by label for comparison charts
+export const generateLabelTimeSeries = (rows: JmeterRow[], startTime: number, endTime: number): any[] => {
+    if (!rows || rows.length === 0) return [];
+
+    const duration = Math.max((endTime - startTime) / 1000, 1);
+    let bucketSize = 1000;
+    if (duration > 300) bucketSize = 5000;
+    if (duration > 3600) bucketSize = 60000;
+
+    // Map: bucketTime -> { [label]: { sum: number, count: number } }
+    const buckets = new Map<number, Record<string, { sum: number, count: number }>>();
+    const allLabels = new Set<string>();
+
+    for (const row of rows) {
+        const bucket = Math.floor((row.timeStamp - startTime) / bucketSize) * bucketSize;
+        if (!buckets.has(bucket)) {
+            buckets.set(bucket, {});
+        }
+        
+        const bData = buckets.get(bucket)!;
+        const label = row.label || 'Unknown';
+        allLabels.add(label);
+
+        if (!bData[label]) {
+            bData[label] = { sum: 0, count: 0 };
+        }
+        bData[label].sum += row.elapsed;
+        bData[label].count++;
+    }
+
+    const sortedBucketTimes = Array.from(buckets.keys()).sort((a, b) => a - b);
+    
+    return sortedBucketTimes.map(bucketTime => {
+        const bData = buckets.get(bucketTime)!;
+        const point: any = {
+            time: bucketTime / 1000,
+            readableTime: new Date(startTime + bucketTime).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        };
+
+        // For each label found in the dataset, calculate avg for this bucket (or null if no data)
+        allLabels.forEach(label => {
+            if (bData[label]) {
+                point[label] = bData[label].sum / bData[label].count;
+            } else {
+                point[label] = null; // or undefined, helps chart connect dots or break
+            }
+        });
+
+        return point;
+    });
+};
+
 // Core analysis logic decoupled from parsing
 export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAnalysis: boolean = false): ProcessedData => {
     if (!rows || rows.length === 0) {
       throw new Error("No data found in file");
     }
 
+    // Generate unique ID
+    const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+
     // 1. Normalization & Sorting
-    // Creating the object structure is necessary for the app's consumption.
-    // Sorting by timestamp is required for time-series consistency.
     const normalizedRows = rows.map(r => {
-       // Handle boolean stored as string "true"/"false"
        let isSuccess = r.success;
        if (typeof isSuccess === 'string') {
          isSuccess = (isSuccess as string).toLowerCase() === 'true';
@@ -75,6 +127,7 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
 
     if (skipDetailedAnalysis) {
         return {
+            id,
             summary: {
                 fileName,
                 totalRequests: normalizedRows.length,
@@ -106,24 +159,20 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
     }
 
     // 2. Single-Pass Aggregation
-    // Instead of iterating normalizedRows multiple times, we iterate once to group data.
     const startTime = normalizedRows[0].timeStamp;
     const endTime = normalizedRows[normalizedRows.length - 1].timeStamp;
     const duration = Math.max((endTime - startTime) / 1000, 1);
 
-    // Dynamic Bucket Size
-    let bucketSize = 1000; // 1 second default
-    if (duration > 300) bucketSize = 5000; // 5s for > 5m
-    if (duration > 3600) bucketSize = 60000; // 1m for > 1h
+    let bucketSize = 1000;
+    if (duration > 300) bucketSize = 5000;
+    if (duration > 3600) bucketSize = 60000;
 
-    // Aggregation Structures
     const timeMap = new Map<number, JmeterRow[]>();
     const labelMap = new Map<string, JmeterRow[]>();
     const codeMap = new Map<string, number>();
     const errorMap = new Map<string, number>();
     const failedRequests: JmeterRow[] = [];
     
-    // Use TypedArray for global elapsed values to save memory/processing for large datasets
     const elapsedValues = new Float64Array(normalizedRows.length);
     let totalBytes = 0;
     let totalSentBytes = 0;
@@ -132,12 +181,10 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
     for (let i = 0; i < rowCount; i++) {
         const row = normalizedRows[i];
 
-        // Global Stats Collection
         elapsedValues[i] = row.elapsed;
         totalBytes += row.bytes;
         totalSentBytes += row.sentBytes;
 
-        // Bucket Grouping
         const bucket = Math.floor((row.timeStamp - startTime) / bucketSize) * bucketSize;
         let bucketRows = timeMap.get(bucket);
         if (!bucketRows) {
@@ -146,7 +193,6 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
         }
         bucketRows.push(row);
 
-        // Label Grouping
         const label = row.label;
         let labelRows = labelMap.get(label);
         if (!labelRows) {
@@ -155,11 +201,9 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
         }
         labelRows.push(row);
 
-        // Response Code Counting
         const code = String(row.responseCode || 'Unknown');
         codeMap.set(code, (codeMap.get(code) || 0) + 1);
 
-        // Failure Collection
         if (!row.success) {
             failedRequests.push(row);
             const msg = row.responseMessage || row.failureMessage || row.responseCode || 'Unknown Error';
@@ -167,8 +211,7 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
         }
     }
 
-    // 3. Global Summary Calculation
-    elapsedValues.sort(); // Sort once for global percentiles
+    elapsedValues.sort();
     const totalRequests = rowCount;
     const successCount = totalRequests - failedRequests.length;
     const sumElapsed = elapsedValues.reduce((a, b) => a + b, 0);
@@ -194,7 +237,6 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
       maxResponseTime: elapsedValues[elapsedValues.length - 1],
     };
 
-    // 4. Time Series Statistics
     const timeSeries: TimeSeriesPoint[] = [];
     const sortedBuckets = Array.from(timeMap.keys()).sort((a, b) => a - b);
     
@@ -202,7 +244,6 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
         const bucketRows = timeMap.get(bucket)!;
         const bCount = bucketRows.length;
         
-        // Use TypedArray for bucket calculation
         const bElapsed = new Float64Array(bCount);
         let bSumElapsed = 0;
         let bSumLatency = 0;
@@ -238,7 +279,6 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
         });
     }
 
-    // 5. Label Statistics
     const labels: LabelStats[] = [];
     for (const [label, lRows] of labelMap) {
         const lCount = lRows.length;
@@ -270,7 +310,6 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
         });
     }
 
-    // 6. Error Stats
     const errors: ErrorStats[] = [];
     errorMap.forEach((count, message) => {
       errors.push({
@@ -281,14 +320,12 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
     });
     errors.sort((a, b) => b.count - a.count);
 
-    // 7. Response Codes
     const responseCodes = Array.from(codeMap.entries()).map(([code, count]) => ({
       code,
       count,
       percentage: (count / totalRequests) * 100
     })).sort((a, b) => b.count - a.count);
 
-    // 8. Histogram
     const bucketCount = 20;
     const min = elapsedValues[0];
     const max = elapsedValues[elapsedValues.length - 1];
@@ -298,42 +335,40 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
        count: 0
     }));
     
-    // Efficient histogram binning
-    for(let i=0; i<elapsedValues.length; i++) {
-        const v = elapsedValues[i];
-        let bucketIdx = Math.floor((v - min) / step);
-        if (bucketIdx >= bucketCount) bucketIdx = bucketCount - 1;
-        distribution[bucketIdx].count++;
+    if (step > 0) {
+        for(let i=0; i<elapsedValues.length; i++) {
+            const v = elapsedValues[i];
+            let bucketIdx = Math.floor((v - min) / step);
+            if (bucketIdx >= bucketCount) bucketIdx = bucketCount - 1;
+            distribution[bucketIdx].count++;
+        }
     }
 
     return {
+      id,
       summary,
       timeSeries,
       labels,
       errors,
-      failedRequests: failedRequests.slice(0, 100), // Keep top 100 for display logs
+      failedRequests: failedRequests.slice(0, 100),
       responseCodes,
       distribution,
       rawRows: normalizedRows
     };
 };
 
-// Main processing function
 export const processData = (file: File, onProgress: (progress: number) => void, skipDetailedAnalysis: boolean = false): Promise<ProcessedData> => {
   return new Promise(async (resolve, reject) => {
     try {
-      // Handle JSON files
       if (file.name.toLowerCase().endsWith('.json')) {
         const text = await file.text();
         const json = JSON.parse(text);
-        // Supports array of objects or generic JMeter JSON structure
         const rows = Array.isArray(json) ? json : (json.testResults || []); 
         const result = analyzeRows(rows, file.name, skipDetailedAnalysis);
         resolve(result);
         return;
       }
 
-      // Handle CSV/JTL files
       Papa.parse(file, {
         header: true,
         dynamicTyping: true,

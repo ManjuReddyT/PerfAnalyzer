@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Activity, CheckCircle, BarChart2, Shield, Github, FileText, Zap, Sparkles, Scale, Eye, Save } from 'lucide-react';
+import { Activity, CheckCircle, BarChart2, Shield, Github, FileText, Zap, Sparkles, Scale, Eye, Save, Settings } from 'lucide-react';
 
 export const AboutView: React.FC = () => {
   return (
@@ -50,12 +50,12 @@ export const AboutView: React.FC = () => {
               <span><strong>Baseline Comparison:</strong> Upload a previous run to visualize regressions (red) vs improvements (green) and metric deltas.</span>
             </li>
             <li className="flex items-start gap-3 text-slate-600 dark:text-slate-300">
-              <Eye className="w-5 h-5 text-blue-500 flex-shrink-0" />
-              <span><strong>Live Monitoring:</strong> Watch active test files in real-time as your load test runs locally.</span>
+              <Settings className="w-5 h-5 text-blue-500 flex-shrink-0" />
+              <span><strong>Global Configuration:</strong> Toggle features like the AI Chatbot and switch between local (Ollama) or cloud (Gemini) AI providers via the new Settings menu.</span>
             </li>
             <li className="flex items-start gap-3 text-slate-600 dark:text-slate-300">
               <Sparkles className="w-5 h-5 text-purple-500 flex-shrink-0" />
-              <span><strong>Hybrid AI Reporting:</strong> Generate executive summaries automatically using our local Heuristic Engine or Google Gemini AI.</span>
+              <span><strong>Hybrid AI Reporting:</strong> Generate executive summaries automatically using Heuristic rules or your configured LLM.</span>
             </li>
              <li className="flex items-start gap-3 text-slate-600 dark:text-slate-300">
               <Save className="w-5 h-5 text-slate-500 flex-shrink-0" />
@@ -74,7 +74,7 @@ export const AboutView: React.FC = () => {
             PerfAnalyzer is designed with a <strong>Local-First</strong> architecture. Your performance data (JTL/CSV files) is processed entirely within your web browser using JavaScript.
           </p>
           <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm">
-            No data is ever sent to a backend server or third-party cloud (except aggregated stats if you explicitly use the optional AI features). This ensures your sensitive test results and URLs remain confidential.
+            No data is ever sent to a backend server or third-party cloud unless you explicitly configure a Cloud AI provider (like Google Gemini). If using Ollama, everything remains strictly on your local machine.
           </p>
         </div>
 
@@ -93,7 +93,7 @@ export const AboutView: React.FC = () => {
             Documentation
           </a>
         </div>
-        <p className="text-xs text-slate-400 mt-6">Version 1.2.0</p>
+        <p className="text-xs text-slate-400 mt-6">Version 1.2.1</p>
       </div>
     </div>
   );
