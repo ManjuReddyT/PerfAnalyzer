@@ -1,4 +1,5 @@
 
+
 export interface JmeterRow {
   timeStamp: number;
   elapsed: number;
@@ -43,6 +44,7 @@ export interface TestSummary {
   p99: number;
   minResponseTime: number;
   maxResponseTime: number;
+  apdex: number; // 0 to 1
 }
 
 export interface TimeSeriesPoint {
@@ -59,6 +61,14 @@ export interface TimeSeriesPoint {
   activeThreads: number;
   avgLatency?: number;
   avgConnect?: number;
+}
+
+export interface CapacityPoint {
+  activeThreads: number;
+  avgResponseTime: number;
+  throughput: number;
+  errorRate: number;
+  count: number;
 }
 
 export interface LabelStats {
@@ -96,12 +106,14 @@ export interface ComparisonAnalysis {
   p90: MetricDiff;
   p95: MetricDiff;
   p99: MetricDiff;
+  apdex: MetricDiff;
 }
 
 export interface ProcessedData {
   id: string; // Unique ID
   summary: TestSummary;
   timeSeries: TimeSeriesPoint[];
+  capacitySeries: CapacityPoint[];
   labels: LabelStats[];
   errors: ErrorStats[];
   failedRequests: JmeterRow[];

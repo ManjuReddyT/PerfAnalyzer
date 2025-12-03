@@ -1,8 +1,9 @@
 
+
 import React from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, ComposedChart, Brush, ReferenceLine
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, ComposedChart, Brush, ReferenceLine, ScatterChart, Scatter
 } from 'recharts';
 
 // --- Theme Colors ---
@@ -30,7 +31,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     return (
       <div className="bg-white dark:bg-slate-800 p-3 border border-slate-200 dark:border-slate-700 shadow-lg rounded-lg text-sm z-50 min-w-[200px]">
         <p className="font-bold text-slate-700 dark:text-slate-200 mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">
-          {data.readableTime || label}
+          {data.readableTime || `Users: ${data.activeThreads}` || label}
         </p>
         
         {/* Render plotted items first */}
@@ -55,7 +56,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         {/* Extended Details - Show context even if not plotted */}
         <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 space-y-1">
              <div className="font-semibold text-slate-400 dark:text-slate-500 mb-1">Context</div>
-            {data.activeThreads !== undefined && (
+            {data.activeThreads !== undefined && !payload.find((p:any) => p.dataKey === 'activeThreads') && (
                 <div className="flex justify-between gap-4"><span>Active Users:</span> <span className="font-mono text-slate-700 dark:text-slate-300">{data.activeThreads}</span></div>
             )}
             {data.p50 !== undefined && !payload.find((p:any) => p.dataKey === 'p50') && (
@@ -66,6 +67,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
             )}
              {data.errorCount !== undefined && data.errorCount > 0 && (
                 <div className="flex justify-between gap-4"><span>Errors:</span> <span className="font-mono text-red-600">{data.errorCount}</span></div>
+            )}
+             {data.throughput !== undefined && !payload.find((p:any) => p.dataKey === 'throughput') && (
+                <div className="flex justify-between gap-4"><span>Throughput:</span> <span className="font-mono text-slate-700 dark:text-slate-300">{data.throughput.toFixed(1)} req/s</span></div>
             )}
         </div>
       </div>
@@ -344,5 +348,19 @@ export const DeltaBarChart = ({ data }: { data: any[] }) => (
         ))}
       </Bar>
     </BarChart>
+  </ResponsiveContainer>
+);
+
+// Capacity Scatter Chart (Active Users vs Response Time)
+export const CapacityScatterChart = ({ data, yKey, yLabel, color }: { data: any[], yKey: string, yLabel: string, color: string }) => (
+  <ResponsiveContainer width="100%" height={400}>
+    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+      <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
+      <XAxis type="number" dataKey="activeThreads" name="Active Users" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} label={{ value: 'Concurrent Users', position: 'bottom', offset: 0, fill: COLORS.text }} />
+      <YAxis type="number" dataKey={yKey} name={yLabel} stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} label={{ value: yLabel, angle: -90, position: 'insideLeft', fill: COLORS.text }} />
+      <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<CustomTooltip />} />
+      <Legend />
+      <Scatter name={`${yLabel} vs Users`} data={data} fill={color} />
+    </ScatterChart>
   </ResponsiveContainer>
 );

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useCallback } from 'react';
 import { ProcessedData, MetricDiff, JmeterRow } from '../types';
 import { 
@@ -12,14 +13,16 @@ import {
   PieDistributionChart,
   TransactionTimeChart,
   TimelineBrushChart,
-  DeltaBarChart
+  DeltaBarChart,
+  CapacityScatterChart
 } from '../components/Charts';
 import { MultiSelectDropdown } from '../components/Inputs';
 import { 
   Activity, Clock, AlertTriangle, TrendingUp, Download, Printer, 
   ArrowRight, Settings, ChevronDown, ChevronUp, Filter, BarChart, 
   AlertCircle, Layers, List, ArrowDown, ArrowUp, Save, Sliders, RotateCcw,
-  Bug, Search, RefreshCw, GitCompare, Code, FileText, MousePointerClick, ToggleLeft, ToggleRight
+  Bug, Search, RefreshCw, GitCompare, Code, FileText, MousePointerClick, ToggleLeft, ToggleRight,
+  Globe, Gauge, Users, Info
 } from 'lucide-react';
 import { formatDuration, analyzeRows, calculateComparison, generateLabelTimeSeries } from '../utils/analytics';
 import { TransactionsView } from './TransactionsView';
@@ -54,8 +57,8 @@ const ComparisonBadge = ({ diff, unit = '' }: { diff: MetricDiff, unit?: string 
     );
 };
 
-const SummaryCard = ({ title, value, subtext, icon: Icon, color, diff, unit }: any) => (
-  <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden">
+const SummaryCard = ({ title, value, subtext, icon: Icon, color, diff, unit, tooltip }: any) => (
+  <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden group">
     <div className="flex justify-between items-start mb-2">
          <div className={`p-2.5 rounded-lg bg-${color}-50 dark:bg-${color}-900/20 text-${color}-600 dark:text-${color}-400`}>
             <Icon className="w-5 h-5" />
@@ -64,7 +67,17 @@ const SummaryCard = ({ title, value, subtext, icon: Icon, color, diff, unit }: a
     </div>
     
     <div>
-      <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">{title}</p>
+      <div className="flex items-center gap-1.5 mb-1">
+        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
+        {tooltip && (
+            <div className="relative group/tooltip">
+                <Info className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-help" />
+                <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-50 leading-relaxed border border-slate-700">
+                    {tooltip}
+                </div>
+            </div>
+        )}
+      </div>
       <h3 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{value}</h3>
       {subtext && <p className="text-xs text-slate-400 mt-2 font-medium">{subtext}</p>}
     </div>
@@ -256,6 +269,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [selectedResponseCodes, setSelectedResponseCodes] = useState<string[]>([]); // Empty = All
   const [showThresholds, setShowThresholds] = useState(false);
   const [selectedBaselineId, setSelectedBaselineId] = useState<string>(''); // Comparison Selection
+  const [resourceFilter, setResourceFilter] = useState<'all' | 'requests' | 'transactions'>('all');
   
   // Chart Modes
   const [chartMode, setChartMode] = useState<'aggregate' | 'byLabel'>('aggregate');
@@ -281,6 +295,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return Array.from(codes).sort();
   }, [data.rawRows]);
 
+  // Check if we have URL data to distinguish requests from transactions
+  const hasUrlData = useMemo(() => {
+     if (data.rawRows.length === 0) return false;
+     return data.rawRows.slice(0, 50).some(r => !!r.URL);
+  }, [data.rawRows]);
+
   // Handle Timeline Brush Changes
   const handleTimelineChange = useCallback((range: {startIndex?: number, endIndex?: number}) => {
      if (range.startIndex !== undefined && range.endIndex !== undefined && data.timeSeries.length > 0) {
@@ -304,23 +324,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const isAllTransactions = selectedTransactions.length === 0 || selectedTransactions.length === uniqueLabels.length;
     const isAllCodes = selectedResponseCodes.length === 0 || selectedResponseCodes.length === uniqueResponseCodes.length;
     const isAllTime = timelineRange === null;
+    const isAllResources = resourceFilter === 'all';
 
-    if (isAllTransactions && isAllCodes && isAllTime) return data.rawRows;
+    if (isAllTransactions && isAllCodes && isAllTime && isAllResources) return data.rawRows;
 
     return data.rawRows.filter(r => {
       const labelMatch = isAllTransactions || selectedTransactions.includes(r.label);
       const codeMatch = isAllCodes || selectedResponseCodes.includes(String(r.responseCode));
       const timeMatch = isAllTime || (r.timeStamp >= timelineRange.start && r.timeStamp <= timelineRange.end);
-      return labelMatch && codeMatch && timeMatch;
+      
+      let resourceMatch = true;
+      if (resourceFilter === 'requests') {
+          resourceMatch = !!r.URL && r.URL.length > 0;
+      } else if (resourceFilter === 'transactions') {
+          resourceMatch = !r.URL || r.URL.length === 0;
+      }
+
+      return labelMatch && codeMatch && timeMatch && resourceMatch;
     });
-  }, [data.rawRows, selectedTransactions, selectedResponseCodes, timelineRange, uniqueLabels, uniqueResponseCodes]);
+  }, [data.rawRows, selectedTransactions, selectedResponseCodes, timelineRange, uniqueLabels, uniqueResponseCodes, resourceFilter]);
 
   const displayData = useMemo(() => {
     if (filteredRawRows.length === 0) {
-      return { ...data, summary: { ...data.summary, totalRequests: 0 }, timeSeries: [], labels: [], errors: [], rawRows: [] };
+      return { ...data, summary: { ...data.summary, totalRequests: 0, apdex: 0 }, timeSeries: [], capacitySeries: [], labels: [], errors: [], rawRows: [] };
     }
-    return analyzeRows(filteredRawRows, data.summary.fileName);
-  }, [filteredRawRows, data.summary.fileName, data]);
+    return analyzeRows(filteredRawRows, data.summary.fileName, false, thresholds.responseTime);
+  }, [filteredRawRows, data.summary.fileName, data, thresholds.responseTime]);
 
   // Memoize data for "Group by Label" chart mode
   const labelChartData = useMemo(() => {
@@ -403,6 +432,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     link.download = `perf-report-${summary.fileName}-filtered.json`;
     link.click();
   };
+
+  const getApdexColor = (score: number) => {
+      if (score >= 0.94) return 'blue';
+      if (score >= 0.85) return 'green';
+      if (score >= 0.70) return 'yellow';
+      return 'red';
+  };
+  const apdexColor = getApdexColor(summary.apdex);
 
   const startDateStr = new Date(summary.startTime).toLocaleString();
   const endDateStr = new Date(summary.endTime).toLocaleString();
@@ -556,6 +593,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 selected={selectedResponseCodes}
                 onChange={setSelectedResponseCodes}
             />
+
+            {hasUrlData && (
+                <>
+                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block ml-2"></div>
+                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-slate-700">
+                    <button 
+                        onClick={() => setResourceFilter('all')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${resourceFilter === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        title="Show All (Requests + Controllers)"
+                    >
+                        All
+                    </button>
+                    <button 
+                        onClick={() => setResourceFilter('requests')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${resourceFilter === 'requests' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        title="Show Only HTTP Requests (Rows with URL)"
+                    >
+                        <Globe className="w-3 h-3" />
+                        Requests
+                    </button>
+                    <button 
+                        onClick={() => setResourceFilter('transactions')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${resourceFilter === 'transactions' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        title="Show Only Transaction Controllers (Rows without URL)"
+                    >
+                        <Layers className="w-3 h-3" />
+                        Trans.
+                    </button>
+                </div>
+                </>
+            )}
          </div>
 
          <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
@@ -574,7 +642,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {showThresholds && (
            <div className="px-6 py-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in slide-in-from-top-2">
               <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Response Time Threshold (ms)</label>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Response Time Threshold (ms) <span className="text-xs text-slate-400">(Apdex T)</span></label>
                 <input 
                   type="number" 
                   value={thresholds.responseTime}
@@ -598,6 +666,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="border-b border-slate-200 dark:border-slate-800 flex overflow-x-auto no-scrollbar">
         <TabButton id="overview" label="Overview" icon={Activity} active={activeTab === 'overview'} onClick={setActiveTab} />
         <TabButton id="charts" label="Detailed Charts" icon={BarChart} active={activeTab === 'charts'} onClick={setActiveTab} />
+        <TabButton id="capacity" label="Capacity Analysis" icon={Users} active={activeTab === 'capacity'} onClick={setActiveTab} />
         <TabButton id="time" label="Transaction Time" icon={Clock} active={activeTab === 'time'} onClick={setActiveTab} />
         <TabButton id="errors" label="Errors & Status" icon={AlertCircle} active={activeTab === 'errors'} onClick={setActiveTab} />
         <TabButton id="latency" label="Latency Breakdown" icon={Layers} active={activeTab === 'latency'} onClick={setActiveTab} />
@@ -610,7 +679,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {activeTab === 'overview' && (
           <div className="space-y-6 pt-4">
             {/* Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <SummaryCard
+                title="APDEX Score"
+                value={summary.apdex.toFixed(2)}
+                subtext={`Target: ${thresholds.responseTime}ms`}
+                icon={Gauge}
+                color={apdexColor}
+                diff={comparison?.apdex}
+                unit=""
+                tooltip={
+                  <span>
+                    <strong>Application Performance Index</strong><br/>
+                    Measures user satisfaction based on response time.<br/>
+                    • <strong>Satisfied:</strong> &lt; T ({thresholds.responseTime}ms)<br/>
+                    • <strong>Tolerating:</strong> T to 4T<br/>
+                    • <strong>Frustrated:</strong> &gt; 4T or Error<br/>
+                    Formula: (Satisfied + (Tolerating/2)) / Total
+                  </span>
+                }
+              />
               <SummaryCard
                 title="Total Requests"
                 value={summary.totalRequests.toLocaleString()}
@@ -621,7 +709,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 unit=""
               />
               <SummaryCard
-                title="Avg Response Time"
+                title="Avg Response"
                 value={`${summary.avgResponseTime.toFixed(0)} ms`}
                 subtext={`Min: ${summary.minResponseTime}ms | Max: ${summary.maxResponseTime}ms`}
                 icon={Clock}
@@ -752,6 +840,59 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                  <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-6">Throughput (Hits per Second)</h3>
                  <ThroughputChart data={displayData.timeSeries} />
+              </div>
+           </div>
+        )}
+
+        {/* === CAPACITY ANALYSIS TAB === */}
+        {activeTab === 'capacity' && (
+           <div className="space-y-6 pt-4">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+                 <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                        <Users className="w-5 h-5 text-indigo-500" />
+                        Scalability Analysis (Active Users vs Response Time)
+                    </h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
+                        This scatter plot helps identify the <strong>"Knee of the Curve"</strong>. It shows how Average Response Time (Y-Axis) changes as the number of Active Users (X-Axis) increases. A sharp upward trend indicates the system's capacity limit.
+                    </p>
+                 </div>
+                 {displayData.capacitySeries.length > 0 ? (
+                    <CapacityScatterChart 
+                        data={displayData.capacitySeries} 
+                        yKey="avgResponseTime" 
+                        yLabel="Avg Response Time (ms)" 
+                        color="#6366f1" 
+                    />
+                 ) : (
+                    <div className="h-[300px] flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
+                        Insufficient data to generate capacity analysis. Ensure your log file includes thread counts.
+                    </div>
+                 )}
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+                 <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5 text-emerald-500" />
+                        Throughput Efficiency (Active Users vs Hits/s)
+                    </h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
+                        This chart visualizes where the system stops scaling. Ideally, throughput should increase linearly with users. If throughput plateaus or drops while users increase, you have hit a bottleneck.
+                    </p>
+                 </div>
+                 {displayData.capacitySeries.length > 0 ? (
+                    <CapacityScatterChart 
+                        data={displayData.capacitySeries} 
+                        yKey="throughput" 
+                        yLabel="Throughput (req/s)" 
+                        color="#10b981" 
+                    />
+                 ) : (
+                    <div className="h-[300px] flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
+                        Insufficient data.
+                    </div>
+                 )}
               </div>
            </div>
         )}

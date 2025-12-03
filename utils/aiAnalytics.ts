@@ -1,4 +1,5 @@
 
+
 import { ProcessedData } from '../types';
 import { GoogleGenAI } from "@google/genai";
 
@@ -17,24 +18,26 @@ const constructPrompt = (data: ProcessedData, tone: AnalysisTone): string => {
     // Prepare compact context to avoid token limits
     const context = {
         summary: data.summary,
+        apdexScore: data.summary.apdex.toFixed(2),
         topErrors: data.errors.slice(0, 5),
         slowestTransactions: [...data.labels].sort((a,b) => b.avgElapsed - a.avgElapsed).slice(0, 5).map(l => ({
             label: l.label, avg: l.avgElapsed, p95: l.p95, errorRate: l.errorRate
-        }))
+        })),
+        scalabilityHint: data.capacitySeries.length > 0 ? "Check capacitySeries for knee of curve" : "No thread data"
     };
 
     const systemPrompt = `You are a Senior Performance Engineer. Analyze the provided JMeter test results JSON. 
     Output a professional report section in Markdown format.
-    Focus on: Root cause of errors, performance bottlenecks, and scalability recommendations.
+    Focus on: User Satisfaction (APDEX), Root cause of errors, performance bottlenecks, and scalability recommendations.
     Do not output conversational text, just the report body.`;
 
     let userPrompt = `Analyze this data.`;
     if (tone === 'executive') {
-        userPrompt = `Write a high-level Executive Summary for a CTO. Focus on business risk, overall system health (Stable/Degraded), and key recommendations. Be concise. Data: ${JSON.stringify(context)}`;
+        userPrompt = `Write a high-level Executive Summary for a CTO. Focus on business risk, APDEX Score (User Satisfaction), overall system health (Stable/Degraded), and key recommendations. Be concise. Data: ${JSON.stringify(context)}`;
     } else if (tone === 'critical') {
-        userPrompt = `Write a Critical Analysis focused on failures and bottlenecks. Be direct and highlight specific transactions or errors that need fixing. Data: ${JSON.stringify(context)}`;
+        userPrompt = `Write a Critical Analysis focused on failures and bottlenecks. Be direct and highlight specific transactions or errors that need fixing. Analyze APDEX score. Data: ${JSON.stringify(context)}`;
     } else {
-        userPrompt = `Write a Standard Performance Report summarizing throughput, latency, and reliability. Data: ${JSON.stringify(context)}`;
+        userPrompt = `Write a Standard Performance Report summarizing throughput, latency, reliability and User Satisfaction (APDEX). Data: ${JSON.stringify(context)}`;
     }
 
     return `${systemPrompt}\n\n${userPrompt}`;
@@ -46,14 +49,15 @@ const generateHeuristicSummary = (data: ProcessedData, tone: AnalysisTone): stri
   const { summary, errors, labels } = data;
   const errorRate = summary.errorRate;
   const p90 = summary.p90;
+  const apdex = summary.apdex;
   
   // 1. Overall Health Assessment
   let health = "Stable";
   let healthDesc = "The system performed within acceptable parameters.";
-  if (errorRate > 5) {
+  if (errorRate > 5 || apdex < 0.70) {
       health = "Critical";
-      healthDesc = `The system experienced significant instability with a ${errorRate.toFixed(2)}% error rate.`;
-  } else if (errorRate > 1 || p90 > 2000) {
+      healthDesc = `The system experienced significant instability with a ${errorRate.toFixed(2)}% error rate and poor user satisfaction (APDEX ${apdex.toFixed(2)}).`;
+  } else if (errorRate > 1 || p90 > 2000 || apdex < 0.85) {
       health = "Degraded";
       healthDesc = "The system showed signs of performance degradation.";
   }
@@ -75,15 +79,17 @@ const generateHeuristicSummary = (data: ProcessedData, tone: AnalysisTone): stri
   if (tone === 'executive') {
       text = `## Executive Summary
 **Test Status:** ${health.toUpperCase()}
+**APDEX Score:** ${apdex.toFixed(2)} / 1.00
 **Duration:** ${(summary.duration / 60).toFixed(1)} minutes
 **Total Throughput:** ${Math.round(summary.totalRequests).toLocaleString()} requests processed.
 
 ${healthDesc}
 
 ### Key Findings
-1. **Reliability:** Success rate of ${(100 - errorRate).toFixed(2)}%.
-2. **Performance:** 90% of requests completed within ${Math.round(p90)}ms.
-3. **Bottlenecks:** The transaction '${slowestTx[0]?.label || 'N/A'}' requires optimization.
+1. **User Experience:** APDEX score of ${apdex.toFixed(2)} indicates ${apdex > 0.94 ? 'Excellent' : apdex > 0.85 ? 'Good' : 'Poor'} user satisfaction.
+2. **Reliability:** Success rate of ${(100 - errorRate).toFixed(2)}%.
+3. **Performance:** 90% of requests completed within ${Math.round(p90)}ms.
+4. **Bottlenecks:** The transaction '${slowestTx[0]?.label || 'N/A'}' requires optimization.
 
 ### Recommendation
 ${errorRate > 1 ? "Immediate investigation into error causes is recommended." : "System is ready for production load based on these metrics."}`;
@@ -91,6 +97,7 @@ ${errorRate > 1 ? "Immediate investigation into error causes is recommended." : 
   } else if (tone === 'critical') {
       text = `## CRITICAL INCIDENT REPORT
 **Status:** ${health}
+**APDEX:** ${apdex.toFixed(2)} (Target: >0.94)
 **Error Rate:** ${errorRate.toFixed(2)}% (${summary.failCount} failed requests)
 
 ### Failure Analysis
@@ -112,6 +119,7 @@ ${bottlenecks}
 The test run conducted on ${summary.fileName} lasted for ${(summary.duration / 60).toFixed(1)} minutes with a total load of ${summary.totalRequests} requests.
 
 **Performance Metrics:**
+- **APDEX Score:** ${apdex.toFixed(2)}
 - **Throughput:** ${summary.throughput.toFixed(1)} req/sec
 - **Avg Response Time:** ${Math.round(summary.avgResponseTime)}ms
 - **P90:** ${Math.round(p90)}ms
@@ -175,6 +183,7 @@ const generateGeminiSummary = async (data: ProcessedData, tone: AnalysisTone, co
         // Prepare compact context to avoid token limits
         const context = {
             summary: data.summary,
+            apdex: data.summary.apdex,
             topErrors: data.errors.slice(0, 5),
             slowestTransactions: [...data.labels].sort((a,b) => b.avgElapsed - a.avgElapsed).slice(0, 5).map(l => ({
                 label: l.label, avg: l.avgElapsed, p95: l.p95, errorRate: l.errorRate
@@ -183,12 +192,12 @@ const generateGeminiSummary = async (data: ProcessedData, tone: AnalysisTone, co
 
         const systemPrompt = `You are a Senior Performance Engineer. Analyze the provided JMeter test results JSON. 
         Output a professional report section in Markdown format.
-        Focus on: Root cause of errors, performance bottlenecks, and scalability recommendations.
+        Focus on: APDEX Score (User Satisfaction), Root cause of errors, performance bottlenecks, and scalability recommendations.
         Do not output conversational text, just the report body.`;
 
         let userPrompt = `Analyze this data.`;
         if (tone === 'executive') {
-            userPrompt = `Write a high-level Executive Summary for a CTO. Focus on business risk, overall system health (Stable/Degraded), and key recommendations. Be concise. Data: ${JSON.stringify(context)}`;
+            userPrompt = `Write a high-level Executive Summary for a CTO. Focus on business risk, APDEX score, overall system health (Stable/Degraded), and key recommendations. Be concise. Data: ${JSON.stringify(context)}`;
         } else if (tone === 'critical') {
             userPrompt = `Write a Critical Analysis focused on failures and bottlenecks. Be direct and highlight specific transactions or errors that need fixing. Data: ${JSON.stringify(context)}`;
         } else {

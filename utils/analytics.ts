@@ -1,6 +1,7 @@
 
+
 import Papa from 'papaparse';
-import { JmeterRow, ProcessedData, TestSummary, TimeSeriesPoint, LabelStats, ErrorStats, ComparisonAnalysis, MetricDiff } from '../types';
+import { JmeterRow, ProcessedData, TestSummary, TimeSeriesPoint, CapacityPoint, LabelStats, ErrorStats, ComparisonAnalysis, MetricDiff } from '../types';
 
 // Helper to calculate percentiles from sorted array-like structures (Array or TypedArray)
 const getPercentile = (sortedArr: ArrayLike<number>, p: number): number => {
@@ -15,6 +16,32 @@ export const formatDuration = (seconds: number): string => {
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
   return `${h > 0 ? h + 'h ' : ''}${m > 0 ? m + 'm ' : ''}${s}s`;
+};
+
+// Calculate APDEX Score
+// T = threshold (Satisfied). 4T = Frustrated.
+export const calculateApdexScore = (rows: JmeterRow[], thresholdT: number = 500): number => {
+    if (rows.length === 0) return 0;
+    
+    let satisfied = 0;
+    let tolerating = 0;
+    
+    // Frustrated is implicitly total - (satisfied + tolerating)
+    // APDEX = (Satisfied + (Tolerating / 2)) / TotalSamples
+    
+    const frustratedThreshold = thresholdT * 4;
+
+    for (const row of rows) {
+        if (!row.success) continue; // Errors are frustrated by default
+
+        if (row.elapsed <= thresholdT) {
+            satisfied++;
+        } else if (row.elapsed <= frustratedThreshold) {
+            tolerating++;
+        }
+    }
+
+    return (satisfied + (tolerating / 2)) / rows.length;
 };
 
 // Calculate comparison metrics between current and baseline
@@ -36,6 +63,7 @@ export const calculateComparison = (current: TestSummary, baseline: TestSummary)
         p90: calcDiff(current.p90, baseline.p90, true),
         p95: calcDiff(current.p95, baseline.p95, true),
         p99: calcDiff(current.p99, baseline.p99, true),
+        apdex: calcDiff(current.apdex, baseline.apdex, false), // Higher APDEX is better
     };
 };
 
@@ -92,7 +120,7 @@ export const generateLabelTimeSeries = (rows: JmeterRow[], startTime: number, en
 };
 
 // Core analysis logic decoupled from parsing
-export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAnalysis: boolean = false): ProcessedData => {
+export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAnalysis: boolean = false, apdexThreshold: number = 500): ProcessedData => {
     if (!rows || rows.length === 0) {
       throw new Error("No data found in file");
     }
@@ -147,8 +175,10 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
                 p99: 0,
                 minResponseTime: 0,
                 maxResponseTime: 0,
+                apdex: 0
             },
             timeSeries: [],
+            capacitySeries: [],
             labels: [],
             errors: [],
             failedRequests: [],
@@ -169,6 +199,8 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
 
     const timeMap = new Map<number, JmeterRow[]>();
     const labelMap = new Map<string, JmeterRow[]>();
+    const threadMap = new Map<number, { sumElapsed: number, count: number, errors: number, buckets: Set<number> }>(); // For Capacity Analysis
+
     const codeMap = new Map<string, number>();
     const errorMap = new Map<string, number>();
     const failedRequests: JmeterRow[] = [];
@@ -200,6 +232,20 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
             labelMap.set(label, labelRows);
         }
         labelRows.push(row);
+
+        // Capacity Data Aggregation (Group by active threads)
+        // We bin threads by 5s or 10s to reduce noise if needed, but strict matching is okay for now
+        const threadCount = row.grpThreads;
+        let tData = threadMap.get(threadCount);
+        if (!tData) {
+            tData = { sumElapsed: 0, count: 0, errors: 0, buckets: new Set() };
+            threadMap.set(threadCount, tData);
+        }
+        tData.sumElapsed += row.elapsed;
+        tData.count++;
+        if(!row.success) tData.errors++;
+        tData.buckets.add(bucket);
+
 
         const code = String(row.responseCode || 'Unknown');
         codeMap.set(code, (codeMap.get(code) || 0) + 1);
@@ -235,6 +281,7 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
       p99: getPercentile(elapsedValues, 99),
       minResponseTime: elapsedValues[0],
       maxResponseTime: elapsedValues[elapsedValues.length - 1],
+      apdex: calculateApdexScore(normalizedRows, apdexThreshold)
     };
 
     const timeSeries: TimeSeriesPoint[] = [];
@@ -276,6 +323,25 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
             activeThreads: Math.round(bThreadsSum / bCount),
             avgLatency: bSumLatency / bCount,
             avgConnect: bSumConnect / bCount,
+        });
+    }
+
+    // Capacity Series Generation
+    const capacitySeries: CapacityPoint[] = [];
+    const sortedThreads = Array.from(threadMap.keys()).sort((a, b) => a - b);
+    for (const threadCount of sortedThreads) {
+        const data = threadMap.get(threadCount)!;
+        // Approximation of throughput at this thread level: count / (unique buckets * bucketTime)? 
+        // Better: count / (time spent at this thread level).
+        // Simple approx: count / (number of buckets where this thread count appeared * bucketSizeInSeconds)
+        const timeSpent = data.buckets.size * (bucketSize / 1000);
+        
+        capacitySeries.push({
+            activeThreads: threadCount,
+            avgResponseTime: data.sumElapsed / data.count,
+            throughput: timeSpent > 0 ? data.count / timeSpent : 0,
+            errorRate: (data.errors / data.count) * 100,
+            count: data.count
         });
     }
 
@@ -348,6 +414,7 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
       id,
       summary,
       timeSeries,
+      capacitySeries,
       labels,
       errors,
       failedRequests: failedRequests.slice(0, 100),
@@ -357,14 +424,14 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAna
     };
 };
 
-export const processData = (file: File, onProgress: (progress: number) => void, skipDetailedAnalysis: boolean = false): Promise<ProcessedData> => {
+export const processData = (file: File, onProgress: (progress: number) => void, skipDetailedAnalysis: boolean = false, thresholds?: { responseTime: number }): Promise<ProcessedData> => {
   return new Promise(async (resolve, reject) => {
     try {
       if (file.name.toLowerCase().endsWith('.json')) {
         const text = await file.text();
         const json = JSON.parse(text);
         const rows = Array.isArray(json) ? json : (json.testResults || []); 
-        const result = analyzeRows(rows, file.name, skipDetailedAnalysis);
+        const result = analyzeRows(rows, file.name, skipDetailedAnalysis, thresholds?.responseTime);
         resolve(result);
         return;
       }
@@ -376,7 +443,7 @@ export const processData = (file: File, onProgress: (progress: number) => void, 
         worker: true, 
         complete: (results) => {
           try {
-            const result = analyzeRows(results.data as JmeterRow[], file.name, skipDetailedAnalysis);
+            const result = analyzeRows(results.data as JmeterRow[], file.name, skipDetailedAnalysis, thresholds?.responseTime);
             resolve(result);
           } catch (err: any) {
             reject(err);

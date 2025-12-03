@@ -255,7 +255,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ data, baseli
                       }
                     `}
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-slate-300">{row.label}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-300 break-all">{row.label}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.count.toLocaleString()}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.avgElapsed.toFixed(0)}</td>
                     
