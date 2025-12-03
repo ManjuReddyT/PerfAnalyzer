@@ -1,10 +1,11 @@
 
 import React, { useCallback, useState } from 'react';
-import { Upload, FileText, Loader2, AlertCircle, PlayCircle, CheckCircle, Trash2, Eye, FolderOpen, Bug } from 'lucide-react';
+import { Upload, FileText, Loader2, AlertCircle, PlayCircle, CheckCircle, Trash2, Eye, FolderOpen, Bug, Link as LinkIcon, DownloadCloud } from 'lucide-react';
 import { hasFileSystemAccessSupport } from '../utils/liveFile';
 
 interface FileUploadProps {
   onFileUpload: (mainFile: File, baselineFile?: File, errorFile?: File) => void;
+  onUrlUpload: (url: string) => void;
   onSampleData: () => void;
   onWatchLive: () => void;
   onLoadSession: (file: File) => void;
@@ -15,6 +16,7 @@ interface FileUploadProps {
 
 export const FileUpload: React.FC<FileUploadProps> = ({ 
   onFileUpload, 
+  onUrlUpload,
   onSampleData, 
   onWatchLive, 
   onLoadSession, 
@@ -25,6 +27,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   const [mainFile, setMainFile] = useState<File | null>(null);
   const [baselineFile, setBaselineFile] = useState<File | null>(null);
   const [errorFile, setErrorFile] = useState<File | null>(null);
+  const [urlInput, setUrlInput] = useState('');
   
   const [isDraggingMain, setIsDraggingMain] = useState(false);
   const [isDraggingBase, setIsDraggingBase] = useState(false);
@@ -82,6 +85,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   const handleProcess = () => {
     if (mainFile) {
       onFileUpload(mainFile, baselineFile || undefined, errorFile || undefined);
+    }
+  };
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (urlInput.trim()) {
+        onUrlUpload(urlInput.trim());
     }
   };
 
@@ -234,8 +244,37 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                >
                   Analyze Results
                </button>
+               
+               {/* Or Separator */}
+               <div className="flex items-center gap-4 w-full max-w-md">
+                   <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
+                   <span className="text-xs text-slate-400 uppercase font-semibold">Or</span>
+                   <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
+               </div>
 
-               <div className="flex flex-wrap justify-center gap-4 text-sm">
+               {/* URL Input */}
+               <form onSubmit={handleUrlSubmit} className="flex w-full max-w-md gap-2">
+                  <div className="relative flex-1">
+                      <LinkIcon className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                      <input 
+                        type="url" 
+                        placeholder="Enter public URL to JTL/CSV..." 
+                        value={urlInput}
+                        onChange={(e) => setUrlInput(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                  </div>
+                  <button 
+                    type="submit"
+                    disabled={!urlInput}
+                    className="px-4 py-2 bg-slate-800 dark:bg-slate-700 text-white rounded-lg hover:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium whitespace-nowrap"
+                  >
+                     <DownloadCloud className="w-4 h-4 inline mr-2" />
+                     Load URL
+                  </button>
+               </form>
+
+               <div className="flex flex-wrap justify-center gap-4 text-sm mt-2">
                    <button 
                     onClick={onSampleData}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:border-blue-300 transition-colors shadow-sm"

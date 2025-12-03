@@ -5,11 +5,14 @@ import { FileUpload } from './components/FileUpload';
 import { DashboardView } from './views/DashboardView';
 import { ReportView } from './views/ReportView';
 import { AboutView } from './views/AboutView';
+import { ChatWidget } from './components/ChatWidget';
+import { GlobalSettings } from './components/GlobalSettings';
 import { processData } from './utils/analytics';
 import { generateSampleData } from './utils/sampleData';
 import { openFileHandle, getFileFromHandle, saveProjectFile } from './utils/liveFile';
 import { ProcessedData, ProjectState } from './types';
 import { Moon, Sun } from 'lucide-react';
+import { AIConfig } from './utils/aiAnalytics';
 
 function App() {
   const [data, setData] = useState<ProcessedData | null>(null);
@@ -22,9 +25,20 @@ function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [thresholds, setThresholds] = useState({ responseTime: 500, errorRate: 1.0 });
 
+  // Global Settings State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isChatEnabled, setIsChatEnabled] = useState(true);
+  const [aiConfig, setAiConfig] = useState<AIConfig>({
+      provider: 'ollama', 
+      ollamaUrl: 'http://localhost:11434',
+      ollamaModel: 'llama3',
+      geminiKey: ''
+  });
+
   // Live File Monitoring State
   const [liveFileHandle, setLiveFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [lastModified, setLastModified] = useState<number>(0);
+  const [livePollInterval, setLivePollInterval] = useState<number>(5000); // Default 5s
   const pollIntervalRef = useRef<number | null>(null);
 
   // Initialize Dark Mode based on preference or system
@@ -36,37 +50,65 @@ function App() {
     }
   }, [darkMode]);
 
+  // Load Global Settings from LocalStorage
+  useEffect(() => {
+    const savedAiConfig = localStorage.getItem('perfAnalyzer_aiConfig');
+    if (savedAiConfig) {
+        try {
+            setAiConfig(prev => ({ ...prev, ...JSON.parse(savedAiConfig) }));
+        } catch(e) {}
+    }
+
+    const savedChatEnabled = localStorage.getItem('perfAnalyzer_chatEnabled');
+    if (savedChatEnabled !== null) {
+        setIsChatEnabled(savedChatEnabled === 'true');
+    }
+  }, []);
+
+  const updateAiConfig = (newConfig: AIConfig) => {
+    setAiConfig(newConfig);
+    localStorage.setItem('perfAnalyzer_aiConfig', JSON.stringify(newConfig));
+  };
+
+  const toggleChat = (enabled: boolean) => {
+    setIsChatEnabled(enabled);
+    localStorage.setItem('perfAnalyzer_chatEnabled', String(enabled));
+  };
+
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
   };
 
   // --- Live File Polling Logic ---
-  useEffect(() => {
-    if (liveFileHandle) {
-      const pollFile = async () => {
-        try {
+  const checkLiveFile = async (force: boolean = false) => {
+      if (!liveFileHandle) return;
+      try {
           const file = await getFileFromHandle(liveFileHandle);
-          if (file.lastModified > lastModified) {
+          if (force || file.lastModified > lastModified) {
              setLastModified(file.lastModified);
              // Re-process quietly
              processData(file, () => {}).then(newData => {
                 setData(newData);
              });
           }
-        } catch (err) {
+      } catch (err) {
           console.error("Error polling file:", err);
           stopWatching();
-        }
-      };
+      }
+  };
 
-      // Poll every 2 seconds
-      pollIntervalRef.current = window.setInterval(pollFile, 2000);
+  useEffect(() => {
+    if (liveFileHandle && livePollInterval > 0) {
+      pollIntervalRef.current = window.setInterval(() => checkLiveFile(false), livePollInterval);
     }
-
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [liveFileHandle, lastModified]);
+  }, [liveFileHandle, lastModified, livePollInterval]);
+
+  const handleManualLiveRefresh = () => {
+      checkLiveFile(true);
+  };
 
   const stopWatching = () => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -110,9 +152,8 @@ function App() {
       
       // Process Error File if exists (Detailed logs)
       if (errorFile) {
-          const errorResult = await processData(errorFile, () => {});
-          // Attach detailed failures to mainResult
-          // We use errorResult.rawRows because we assume the error file IS just failed requests with details
+          // Skip analysis for error file to speed up
+          const errorResult = await processData(errorFile, () => {}, true);
           mainResult.detailedFailures = errorResult.rawRows;
       }
 
@@ -128,6 +169,31 @@ function App() {
     } catch (err: any) {
       setError(err.message || "Failed to parse file. Please ensure it's a valid JMeter CSV/JTL.");
       setLoading(false);
+    }
+  };
+
+  const handleUrlUpload = async (url: string) => {
+    setLoading(true);
+    setProgress(10);
+    setError(null);
+    
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+        }
+        setProgress(30);
+        
+        const blob = await response.blob();
+        // Extract filename from URL or default
+        const fileName = url.substring(url.lastIndexOf('/') + 1) || 'remote_data.csv';
+        const file = new File([blob], fileName, { type: blob.type });
+        
+        setProgress(50);
+        await handleFileUpload(file);
+    } catch (err: any) {
+        setError(`Failed to load URL: ${err.message}. Ensure the server supports CORS.`);
+        setLoading(false);
     }
   };
 
@@ -207,10 +273,13 @@ function App() {
                 onUpdateThresholds={setThresholds} 
                 onSaveSession={handleSaveSession}
                 isLive={!!liveFileHandle}
+                livePollInterval={livePollInterval}
+                onSetPollInterval={setLivePollInterval}
+                onForceRefresh={handleManualLiveRefresh}
             />
         );
       case 'report':
-        return <ReportView data={data} baselineData={baselineData} thresholds={thresholds} />;
+        return <ReportView data={data} baselineData={baselineData} thresholds={thresholds} aiConfig={aiConfig} />;
       case 'about':
         return <AboutView />;
       default:
@@ -231,7 +300,14 @@ function App() {
   if (!data) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col transition-colors duration-200">
-        <div className="absolute top-0 right-0 p-4">
+        <div className="absolute top-0 right-0 p-4 flex gap-2">
+           <button 
+             onClick={() => setIsSettingsOpen(true)}
+             className="p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+             title="Global Settings"
+           >
+             <Settings className="w-5 h-5 text-indigo-500" />
+           </button>
            <button 
              onClick={toggleDarkMode}
              className="p-2 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
@@ -241,7 +317,8 @@ function App() {
            </button>
         </div>
         <FileUpload 
-          onFileUpload={handleFileUpload} 
+          onFileUpload={handleFileUpload}
+          onUrlUpload={handleUrlUpload}
           onSampleData={handleUseSample}
           onWatchLive={handleWatchLive}
           onLoadSession={handleLoadSession}
@@ -249,23 +326,48 @@ function App() {
           progress={progress}
           error={error} 
         />
+        {/* Render chat if enabled, passing empty context for generic help */}
+        {isChatEnabled && <ChatWidget contextData={null} config={aiConfig} />}
+        
+        <GlobalSettings 
+            isOpen={isSettingsOpen} 
+            onClose={() => setIsSettingsOpen(false)}
+            config={aiConfig}
+            onUpdateConfig={updateAiConfig}
+            chatEnabled={isChatEnabled}
+            onToggleChat={toggleChat}
+        />
       </div>
     );
   }
 
   return (
-    <Layout 
-      activeView={activeView} 
-      onNavigate={setActiveView} 
-      fileName={data.summary.fileName}
-      baselineName={baselineData?.summary.fileName}
-      darkMode={darkMode}
-      toggleDarkMode={toggleDarkMode}
-      onReset={handleReset}
-    >
-      {renderContent()}
-    </Layout>
+    <>
+      <Layout 
+        activeView={activeView} 
+        onNavigate={setActiveView} 
+        fileName={data.summary.fileName}
+        baselineName={baselineData?.summary.fileName}
+        darkMode={darkMode}
+        toggleDarkMode={toggleDarkMode}
+        onReset={handleReset}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      >
+        {renderContent()}
+        {isChatEnabled && <ChatWidget contextData={data} config={aiConfig} />}
+      </Layout>
+      
+      <GlobalSettings 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)}
+        config={aiConfig}
+        onUpdateConfig={updateAiConfig}
+        chatEnabled={isChatEnabled}
+        onToggleChat={toggleChat}
+      />
+    </>
   );
 }
 
 export default App;
+import { Settings } from 'lucide-react';

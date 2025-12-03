@@ -40,7 +40,7 @@ export const calculateComparison = (current: TestSummary, baseline: TestSummary)
 };
 
 // Core analysis logic decoupled from parsing
-export const analyzeRows = (rows: JmeterRow[], fileName: string): ProcessedData => {
+export const analyzeRows = (rows: JmeterRow[], fileName: string, skipDetailedAnalysis: boolean = false): ProcessedData => {
     if (!rows || rows.length === 0) {
       throw new Error("No data found in file");
     }
@@ -71,6 +71,38 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string): ProcessedData 
 
     if (normalizedRows.length === 0) {
       throw new Error("No valid rows parsed");
+    }
+
+    if (skipDetailedAnalysis) {
+        return {
+            summary: {
+                fileName,
+                totalRequests: normalizedRows.length,
+                successCount: 0,
+                failCount: 0,
+                errorRate: 0,
+                duration: 0,
+                startTime: normalizedRows[0].timeStamp,
+                endTime: normalizedRows[normalizedRows.length - 1].timeStamp,
+                throughput: 0,
+                receivedKBytesPerSec: 0,
+                sentKBytesPerSec: 0,
+                avgResponseTime: 0,
+                p50: 0,
+                p90: 0,
+                p95: 0,
+                p99: 0,
+                minResponseTime: 0,
+                maxResponseTime: 0,
+            },
+            timeSeries: [],
+            labels: [],
+            errors: [],
+            failedRequests: [],
+            responseCodes: [],
+            distribution: [],
+            rawRows: normalizedRows
+        };
     }
 
     // 2. Single-Pass Aggregation
@@ -287,7 +319,7 @@ export const analyzeRows = (rows: JmeterRow[], fileName: string): ProcessedData 
 };
 
 // Main processing function
-export const processData = (file: File, onProgress: (progress: number) => void): Promise<ProcessedData> => {
+export const processData = (file: File, onProgress: (progress: number) => void, skipDetailedAnalysis: boolean = false): Promise<ProcessedData> => {
   return new Promise(async (resolve, reject) => {
     try {
       // Handle JSON files
@@ -296,7 +328,7 @@ export const processData = (file: File, onProgress: (progress: number) => void):
         const json = JSON.parse(text);
         // Supports array of objects or generic JMeter JSON structure
         const rows = Array.isArray(json) ? json : (json.testResults || []); 
-        const result = analyzeRows(rows, file.name);
+        const result = analyzeRows(rows, file.name, skipDetailedAnalysis);
         resolve(result);
         return;
       }
@@ -309,7 +341,7 @@ export const processData = (file: File, onProgress: (progress: number) => void):
         worker: true, 
         complete: (results) => {
           try {
-            const result = analyzeRows(results.data as JmeterRow[], file.name);
+            const result = analyzeRows(results.data as JmeterRow[], file.name, skipDetailedAnalysis);
             resolve(result);
           } catch (err: any) {
             reject(err);

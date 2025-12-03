@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ProcessedData, MetricDiff } from '../types';
 import { ResponseTimeChart, ThroughputChart } from '../components/Charts';
-import { Printer, FileText, User, MessageSquare, Download, Sparkles, Wand2, RefreshCw, Settings, X, HardDrive, Cloud } from 'lucide-react';
+import { Printer, FileText, User, MessageSquare, Download, Sparkles, Wand2, RefreshCw, HardDrive, Cloud } from 'lucide-react';
 import { formatDuration, calculateComparison } from '../utils/analytics';
-import { generateInsights, AnalysisTone, AIProvider, AIConfig } from '../utils/aiAnalytics';
+import { generateInsights, AnalysisTone, AIConfig } from '../utils/aiAnalytics';
 
 // Declare html2pdf for TypeScript
 declare var html2pdf: any;
@@ -13,9 +13,10 @@ interface ReportViewProps {
   data: ProcessedData;
   baselineData?: ProcessedData | null;
   thresholds: { responseTime: number; errorRate: number };
+  aiConfig: AIConfig;
 }
 
-export const ReportView: React.FC<ReportViewProps> = ({ data, baselineData, thresholds }) => {
+export const ReportView: React.FC<ReportViewProps> = ({ data, baselineData, thresholds, aiConfig }) => {
   const [reportTitle, setReportTitle] = useState('Performance Test Report');
   const [author, setAuthor] = useState('Performance Engineer');
   const [observations, setObservations] = useState('');
@@ -24,38 +25,6 @@ export const ReportView: React.FC<ReportViewProps> = ({ data, baselineData, thre
   // AI State
   const [aiTone, setAiTone] = useState<AnalysisTone>('standard');
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [showAiSettings, setShowAiSettings] = useState(false);
-
-  // AI Configuration State with explicit defaults
-  const [aiConfig, setAiConfig] = useState<AIConfig>({
-      provider: 'ollama', 
-      ollamaUrl: 'http://localhost:11434',
-      ollamaModel: 'llama3',
-      geminiKey: ''
-  });
-
-  // Load settings from local storage on mount, merging with defaults
-  useEffect(() => {
-      const savedConfig = localStorage.getItem('perfAnalyzer_aiConfig');
-      if (savedConfig) {
-          try {
-            const parsed = JSON.parse(savedConfig);
-            // Merge defaults with parsed config to ensure no fields are undefined
-            setAiConfig(prev => ({
-                ...prev,
-                ...parsed
-            }));
-          } catch(e) { /* ignore */ }
-      }
-  }, []);
-
-  const updateAiConfig = (updates: Partial<AIConfig>) => {
-      setAiConfig(prev => {
-          const newConfig = { ...prev, ...updates };
-          localStorage.setItem('perfAnalyzer_aiConfig', JSON.stringify(newConfig));
-          return newConfig;
-      });
-  };
 
   const { summary } = data;
   
@@ -130,147 +99,46 @@ export const ReportView: React.FC<ReportViewProps> = ({ data, baselineData, thre
       <div className="bg-gradient-to-r from-violet-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800 p-6 rounded-xl shadow-sm border border-violet-100 dark:border-slate-700 no-print relative overflow-hidden transition-all duration-300 ease-in-out">
          <div className="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
          
-         {/* Settings Panel (Swaps with Main Content when active) */}
-         {showAiSettings ? (
-             <div className="relative z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm -m-6 p-6 rounded-xl flex flex-col animate-in fade-in slide-in-from-top-2 shadow-inner">
-                 <div className="flex justify-between items-center mb-4">
-                     <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                        <Settings className="w-5 h-5 text-indigo-500" />
-                        AI Provider Settings
-                     </h3>
-                     <button onClick={() => setShowAiSettings(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
-                         <X className="w-5 h-5 text-slate-500" />
-                     </button>
-                 </div>
-                 
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                     <button 
-                        onClick={() => updateAiConfig({ provider: 'ollama' })}
-                        className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${aiConfig.provider === 'ollama' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                     >
-                         <HardDrive className="w-6 h-6 mb-2 text-indigo-600 dark:text-indigo-400" />
-                         <span className="font-bold text-sm text-slate-800 dark:text-white">Ollama (Local)</span>
-                         <span className="text-xs text-slate-500">Privacy Focused</span>
-                     </button>
-                     <button 
-                        onClick={() => updateAiConfig({ provider: 'gemini' })}
-                        className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${aiConfig.provider === 'gemini' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                     >
-                         <Cloud className="w-6 h-6 mb-2 text-blue-600 dark:text-blue-400" />
-                         <span className="font-bold text-sm text-slate-800 dark:text-white">Google Gemini</span>
-                         <span className="text-xs text-slate-500">High Performance</span>
-                     </button>
-                     <button 
-                        onClick={() => updateAiConfig({ provider: 'heuristic' })}
-                        className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${aiConfig.provider === 'heuristic' ? 'border-slate-500 bg-slate-100 dark:bg-slate-800' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                     >
-                         <Sparkles className="w-6 h-6 mb-2 text-slate-600 dark:text-slate-400" />
-                         <span className="font-bold text-sm text-slate-800 dark:text-white">Basic Heuristic</span>
-                         <span className="text-xs text-slate-500">Offline / No AI</span>
-                     </button>
-                 </div>
-
-                 <div className="space-y-4 max-w-lg mx-auto w-full mb-2">
-                     {aiConfig.provider === 'ollama' && (
-                         <div className="space-y-3 animate-in fade-in">
-                             <div>
-                                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Ollama URL</label>
-                                 <input 
-                                    type="text" 
-                                    value={aiConfig.ollamaUrl || ''}
-                                    onChange={(e) => updateAiConfig({ ollamaUrl: e.target.value })}
-                                    className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-800 dark:border-slate-700 text-slate-900 dark:text-slate-100" 
-                                    placeholder="http://localhost:11434"
-                                 />
-                                 <p className="text-[10px] text-slate-500 mt-1">Make sure to set <code>OLLAMA_ORIGINS="*"</code> in your environment.</p>
-                             </div>
-                             <div>
-                                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Model Name</label>
-                                 <input 
-                                    type="text" 
-                                    value={aiConfig.ollamaModel || ''}
-                                    onChange={(e) => updateAiConfig({ ollamaModel: e.target.value })}
-                                    className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-800 dark:border-slate-700 text-slate-900 dark:text-slate-100" 
-                                    placeholder="llama3"
-                                 />
-                             </div>
-                         </div>
-                     )}
-                     
-                     {aiConfig.provider === 'gemini' && (
-                         <div className="space-y-3 animate-in fade-in">
-                             <div>
-                                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">API Key</label>
-                                 <input 
-                                    type="password" 
-                                    value={aiConfig.geminiKey || ''}
-                                    onChange={(e) => updateAiConfig({ geminiKey: e.target.value })}
-                                    className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-800 dark:border-slate-700 text-slate-900 dark:text-slate-100" 
-                                    placeholder="Enter your Gemini API Key"
-                                 />
-                             </div>
-                         </div>
-                     )}
-                 </div>
-
-                 <div className="pt-2 flex justify-end border-t border-slate-100 dark:border-slate-800">
-                     <button 
-                        onClick={() => setShowAiSettings(false)}
-                        className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-bold rounded-lg hover:opacity-90 transition-opacity"
-                     >
-                         Save & Close
-                     </button>
-                 </div>
-             </div>
-         ) : (
-            <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 animate-in fade-in">
-                <div>
-                <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                    AI Report Assistant
-                    <span className="text-xs font-normal text-slate-500 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 ml-2 uppercase">
-                        {aiConfig.provider === 'ollama' ? `Local: ${aiConfig.ollamaModel || 'Default'}` : aiConfig.provider === 'gemini' ? 'Google Gemini' : 'Offline Mode'}
-                    </span>
-                </h2>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-lg">
-                    Use the Hybrid AI engine to analyze your test data and automatically generate an executive summary.
-                </p>
-                </div>
-                
-                <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <button 
-                        onClick={() => setShowAiSettings(true)}
-                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded transition-colors"
-                        title="Configure AI Provider"
-                    >
-                        <Settings className="w-4 h-4" />
-                    </button>
-                    <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
-
-                    <div className="flex flex-col">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 px-1">Report Tone</label>
-                    <select 
-                        value={aiTone}
-                        onChange={(e) => setAiTone(e.target.value as AnalysisTone)}
-                        className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
-                    >
-                        <option value="standard">Standard Report</option>
-                        <option value="executive">Executive Summary</option>
-                        <option value="critical">Critical Analysis</option>
-                    </select>
-                    </div>
-                    <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-                    <button 
-                    onClick={handleGenerateAi}
-                    disabled={isAiLoading}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-70"
-                    >
-                    {isAiLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                    {isAiLoading ? 'Analyzing...' : 'Generate'}
-                    </button>
-                </div>
+         <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 animate-in fade-in">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  AI Report Assistant
+                  <span className="text-xs font-normal text-slate-500 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 ml-2 uppercase flex items-center gap-1">
+                      {aiConfig.provider === 'ollama' && <HardDrive className="w-3 h-3" />}
+                      {aiConfig.provider === 'gemini' && <Cloud className="w-3 h-3" />}
+                      {aiConfig.provider === 'ollama' ? `Local: ${aiConfig.ollamaModel || 'Default'}` : aiConfig.provider === 'gemini' ? 'Google Gemini' : 'Offline Mode'}
+                  </span>
+              </h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-lg">
+                  Use the Hybrid AI engine to analyze your test data and automatically generate an executive summary.
+              </p>
             </div>
-         )}
+            
+            <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="flex flex-col">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 px-1">Report Tone</label>
+                  <select 
+                      value={aiTone}
+                      onChange={(e) => setAiTone(e.target.value as AnalysisTone)}
+                      className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                  >
+                      <option value="standard">Standard Report</option>
+                      <option value="executive">Executive Summary</option>
+                      <option value="critical">Critical Analysis</option>
+                  </select>
+                </div>
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                <button 
+                  onClick={handleGenerateAi}
+                  disabled={isAiLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-70"
+                >
+                  {isAiLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                  {isAiLoading ? 'Analyzing...' : 'Generate'}
+                </button>
+            </div>
+         </div>
       </div>
 
       {/* Configuration Panel - Hidden on Print */}

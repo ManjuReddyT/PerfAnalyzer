@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Activity, BarChart2, Printer, Sun, Moon, X, Info, Menu, FileText, UploadCloud } from 'lucide-react';
+import { Activity, BarChart2, Printer, Sun, Moon, X, Info, Menu, FileText, UploadCloud, Settings } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,6 +11,7 @@ interface LayoutProps {
   darkMode: boolean;
   toggleDarkMode: () => void;
   onReset: () => void;
+  onOpenSettings: () => void;
 }
 
 const NavItem = ({ id, label, icon: Icon, active, onClick }: any) => (
@@ -35,7 +36,8 @@ export const Layout: React.FC<LayoutProps> = ({
   baselineName, 
   darkMode, 
   toggleDarkMode,
-  onReset 
+  onReset,
+  onOpenSettings
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -104,6 +106,15 @@ export const Layout: React.FC<LayoutProps> = ({
         </nav>
 
         <div className="p-4 border-t border-slate-800 space-y-4">
+           {/* Global Settings */}
+           <button 
+             onClick={onOpenSettings}
+             className="w-full flex items-center gap-3 px-3 py-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors text-sm font-medium"
+           >
+             <Settings className="w-5 h-5 text-indigo-400" />
+             Settings
+           </button>
+
            {/* Dark Mode Toggle */}
            <button 
              onClick={toggleDarkMode}
@@ -166,6 +177,12 @@ export const Layout: React.FC<LayoutProps> = ({
              PerfAnalyzer
            </span>
            <div className="flex items-center gap-4">
+              <button 
+                onClick={onOpenSettings}
+                className="p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <Settings className="w-6 h-6 text-slate-600 dark:text-slate-300" />
+              </button>
               <button 
                 onClick={toggleDarkMode}
                 className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"

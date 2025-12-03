@@ -19,7 +19,7 @@ import {
   Activity, Clock, AlertTriangle, TrendingUp, Download, Printer, 
   ArrowRight, Settings, ChevronDown, ChevronUp, Filter, BarChart, 
   AlertCircle, Layers, List, ArrowDown, ArrowUp, Save, Sliders, RotateCcw,
-  Bug, Search, X, Code, FileText, MousePointerClick
+  Bug, Search, X, Code, FileText, MousePointerClick, RefreshCw
 } from 'lucide-react';
 import { formatDuration, analyzeRows, calculateComparison } from '../utils/analytics';
 import { TransactionsView } from './TransactionsView';
@@ -32,6 +32,9 @@ interface DashboardViewProps {
   onUpdateThresholds: (t: { responseTime: number; errorRate: number }) => void;
   onSaveSession: () => void;
   isLive?: boolean;
+  livePollInterval?: number;
+  onSetPollInterval?: (ms: number) => void;
+  onForceRefresh?: () => void;
 }
 
 const ComparisonBadge = ({ diff, unit = '' }: { diff: MetricDiff, unit?: string }) => {
@@ -243,7 +246,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   thresholds, 
   onUpdateThresholds, 
   onSaveSession,
-  isLive 
+  isLive,
+  livePollInterval,
+  onSetPollInterval,
+  onForceRefresh
 }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>([]); // Empty = All
@@ -378,10 +384,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
                 Dashboard
                 {isLive && (
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold animate-pulse">
-                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                    LIVE
-                </span>
+                    <div className="flex items-center gap-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 px-2 py-1 rounded-full">
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 text-red-600 dark:text-red-400 text-xs font-bold animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                            LIVE
+                        </span>
+                        
+                        {/* Live Controls */}
+                        {onSetPollInterval && (
+                            <div className="flex items-center gap-1 border-l border-red-200 dark:border-red-800 pl-2">
+                                <select 
+                                    className="bg-transparent text-[10px] font-medium text-red-700 dark:text-red-300 focus:outline-none cursor-pointer"
+                                    value={livePollInterval}
+                                    onChange={(e) => onSetPollInterval(Number(e.target.value))}
+                                >
+                                    <option value="2000">2s</option>
+                                    <option value="5000">5s</option>
+                                    <option value="10000">10s</option>
+                                    <option value="0">Off</option>
+                                </select>
+                            </div>
+                        )}
+                        
+                         {onForceRefresh && (
+                            <button 
+                                onClick={onForceRefresh}
+                                className="p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-800/50 rounded-full transition-colors"
+                                title="Force Refresh Now"
+                            >
+                                <RefreshCw className="w-3 h-3" />
+                            </button>
+                        )}
+                    </div>
                 )}
                  {baselineData && (
                     <span className="flex items-center gap-2 text-sm font-normal text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-md border border-blue-200 dark:border-blue-900">
