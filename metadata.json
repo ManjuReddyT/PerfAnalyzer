@@ -1,0 +1,5 @@
+{
+  "name": "PerfAnalyzer",
+  "description": "A professional, browser-based performance testing results analyzer for JTL and CSV files, offering comprehensive visualization and reporting.",
+  "requestFramePermissions": []
+}
