@@ -91,11 +91,19 @@ const renderTruncatedLegend = (value: string, entry: any) => {
 };
 
 // Dual Axis Chart: Response Time (Lines) vs Active Users (Area)
-// Added baseline support
-export const ResponseTimeTrendChart = ({ data, enableBrush = false, threshold, baselineData }: { data: any[], enableBrush?: boolean, threshold?: number, baselineData?: any[] }) => {
-    // Merge baseline data if exists. 
-    // Assumption: data and baselineData are array of TimeSeriesPoints with same relative time order/buckets
-    // or we just map by index if length matches roughly.
+export const ResponseTimeTrendChart = ({ 
+  data, 
+  enableBrush = false, 
+  threshold, 
+  baselineData,
+  height = 400 
+}: { 
+  data: any[], 
+  enableBrush?: boolean, 
+  threshold?: number, 
+  baselineData?: any[],
+  height?: number | string
+}) => {
     const chartData = data.map((point, i) => {
         const basePoint = baselineData && baselineData[i];
         return {
@@ -105,7 +113,7 @@ export const ResponseTimeTrendChart = ({ data, enableBrush = false, threshold, b
     });
 
     return (
-      <ResponsiveContainer width="100%" height={400}>
+      <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
           <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
@@ -149,13 +157,15 @@ export const ResponseTimeTrendChart = ({ data, enableBrush = false, threshold, b
 export const ResponseTimeChart = ({ 
   data, 
   threshold, 
-  series 
+  series,
+  height = 400
 }: { 
   data: any[], 
   threshold?: number, 
-  series?: { key: string, name: string, color?: string }[] 
+  series?: { key: string, name: string, color?: string }[],
+  height?: number | string
 }) => (
-  <ResponsiveContainer width="100%" height={400}>
+  <ResponsiveContainer width="100%" height={height}>
     <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
@@ -192,8 +202,8 @@ export const ResponseTimeChart = ({
   </ResponsiveContainer>
 );
 
-export const TransactionTimeChart = ({ data }: { data: any[] }) => (
-  <ResponsiveContainer width="100%" height={400}>
+export const TransactionTimeChart = ({ data, height = 400 }: { data: any[], height?: number | string }) => (
+  <ResponsiveContainer width="100%" height={height}>
     <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
@@ -208,8 +218,8 @@ export const TransactionTimeChart = ({ data }: { data: any[] }) => (
   </ResponsiveContainer>
 );
 
-export const ThroughputChart = ({ data }: { data: any[] }) => (
-  <ResponsiveContainer width="100%" height={300}>
+export const ThroughputChart = ({ data, height = 300 }: { data: any[], height?: number | string }) => (
+  <ResponsiveContainer width="100%" height={height}>
     <AreaChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
@@ -221,8 +231,8 @@ export const ThroughputChart = ({ data }: { data: any[] }) => (
   </ResponsiveContainer>
 );
 
-export const HistogramChart = ({ data }: { data: any[] }) => (
-  <ResponsiveContainer width="100%" height={300}>
+export const HistogramChart = ({ data, height = 300 }: { data: any[], height?: number | string }) => (
+  <ResponsiveContainer width="100%" height={height}>
     <BarChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.grid} />
       <XAxis dataKey="range" stroke={COLORS.text} fontSize={10} tick={{fill: COLORS.text}} interval={0} angle={-45} textAnchor="end" height={60} />
@@ -236,8 +246,8 @@ export const HistogramChart = ({ data }: { data: any[] }) => (
   </ResponsiveContainer>
 );
 
-export const ErrorRateChart = ({ data, threshold }: { data: any[], threshold?: number }) => (
-  <ResponsiveContainer width="100%" height={300}>
+export const ErrorRateChart = ({ data, threshold, height = 300 }: { data: any[], threshold?: number, height?: number | string }) => (
+  <ResponsiveContainer width="100%" height={height}>
     <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
@@ -252,8 +262,8 @@ export const ErrorRateChart = ({ data, threshold }: { data: any[], threshold?: n
   </ResponsiveContainer>
 );
 
-export const ErrorTrendChart = ({ data }: { data: any[] }) => (
-  <ResponsiveContainer width="100%" height={300}>
+export const ErrorTrendChart = ({ data, height = 300 }: { data: any[], height?: number | string }) => (
+  <ResponsiveContainer width="100%" height={height}>
     <BarChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
       <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
@@ -265,8 +275,8 @@ export const ErrorTrendChart = ({ data }: { data: any[] }) => (
   </ResponsiveContainer>
 );
 
-export const LatencyCompositionChart = ({ data }: { data: any[] }) => (
-  <ResponsiveContainer width="100%" height={300}>
+export const LatencyCompositionChart = ({ data, height = 300 }: { data: any[], height?: number | string }) => (
+  <ResponsiveContainer width="100%" height={height}>
      <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
         <XAxis dataKey="readableTime" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} minTickGap={30} />
@@ -280,8 +290,8 @@ export const LatencyCompositionChart = ({ data }: { data: any[] }) => (
   </ResponsiveContainer>
 );
 
-export const PieDistributionChart = ({ data }: { data: any[] }) => (
-  <ResponsiveContainer width="100%" height={300}>
+export const PieDistributionChart = ({ data, height = 300 }: { data: any[], height?: number | string }) => (
+  <ResponsiveContainer width="100%" height={height}>
     <PieChart>
       <Pie
         data={data}
@@ -305,7 +315,12 @@ export const PieDistributionChart = ({ data }: { data: any[] }) => (
 );
 
 // Global Timeline Control using Brush
-export const TimelineBrushChart = ({ data, onChange }: { data: any[], onChange: (range: {startIndex?: number, endIndex?: number}) => void }) => (
+interface TimelineBrushChartProps {
+  data: any[];
+  onChange: (range: {startIndex?: number, endIndex?: number}) => void;
+}
+
+export const TimelineBrushChart: React.FC<TimelineBrushChartProps> = ({ data, onChange }) => (
   <div style={{ width: '100%', height: 100 }}>
     <ResponsiveContainer>
       <AreaChart data={data} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
@@ -334,8 +349,8 @@ export const TimelineBrushChart = ({ data, onChange }: { data: any[], onChange: 
 );
 
 // Comparison Bar Chart (Delta)
-export const DeltaBarChart = ({ data }: { data: any[] }) => (
-  <ResponsiveContainer width="100%" height={300}>
+export const DeltaBarChart = ({ data, height = 300 }: { data: any[], height?: number | string }) => (
+  <ResponsiveContainer width="100%" height={height}>
     <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={COLORS.grid} />
       <XAxis type="number" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} />
@@ -352,8 +367,20 @@ export const DeltaBarChart = ({ data }: { data: any[] }) => (
 );
 
 // Capacity Scatter Chart (Active Users vs Response Time)
-export const CapacityScatterChart = ({ data, yKey, yLabel, color }: { data: any[], yKey: string, yLabel: string, color: string }) => (
-  <ResponsiveContainer width="100%" height={400}>
+export const CapacityScatterChart = ({ 
+  data, 
+  yKey, 
+  yLabel, 
+  color,
+  height = 400
+}: { 
+  data: any[], 
+  yKey: string, 
+  yLabel: string, 
+  color: string,
+  height?: number | string
+}) => (
+  <ResponsiveContainer width="100%" height={height}>
     <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
       <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
       <XAxis type="number" dataKey="activeThreads" name="Active Users" stroke={COLORS.text} fontSize={12} tick={{fill: COLORS.text}} label={{ value: 'Concurrent Users', position: 'bottom', offset: 0, fill: COLORS.text }} />

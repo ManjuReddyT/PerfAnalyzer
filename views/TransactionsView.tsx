@@ -1,7 +1,8 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { ProcessedData, LabelStats } from '../types';
-import { Search, ArrowUp, ArrowDown, X, Globe, AlertCircle, Filter, Download, Code, FileText } from 'lucide-react';
+import { Search, ArrowUp, ArrowDown, X, Globe, AlertCircle, Filter, Download, Code, FileText, Maximize2, Minimize2 } from 'lucide-react';
 import { MultiSelectDropdown } from '../components/Inputs';
 
 interface TransactionsViewProps {
@@ -17,11 +18,41 @@ interface SortConfig {
   direction: SortOrder;
 }
 
+// Helper Component for Table Headers to be used in both Standard and Maximized views
+const SortableHeader = ({ field, label, sortConfigs, onSort }: { field: any, label: string, sortConfigs: any[], onSort: any }) => {
+  const config = sortConfigs.find((c: any) => c.key === field);
+  const index = sortConfigs.findIndex((c: any) => c.key === field);
+  
+  return (
+    <th 
+      className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-50 transition-colors select-none group sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm"
+      onClick={(e) => onSort(field, e)}
+      title="Shift+Click to sort by multiple columns"
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        {config && (
+          <span className="flex items-center">
+            {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600" /> : <ArrowDown className="w-3 h-3 text-blue-600" />}
+            {sortConfigs.length > 1 && (
+              <span className="text-[10px] ml-0.5 text-blue-600 font-bold">{index + 1}</span>
+            )}
+          </span>
+        )}
+        {!config && (
+          <ArrowUp className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+        )}
+      </div>
+    </th>
+  );
+};
+
 export const TransactionsView: React.FC<TransactionsViewProps> = ({ data, baselineData }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [sortConfigs, setSortConfigs] = useState<SortConfig[]>([{ key: 'avgElapsed', direction: 'desc' }]);
   const [selectedLabelDetail, setSelectedLabelDetail] = useState<string | null>(null);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   // Extract unique labels for filter
   const uniqueLabels = useMemo(() => {
@@ -149,45 +180,21 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ data, baseli
     document.body.removeChild(link);
   };
 
-  const HeaderCell = ({ field, label }: { field: SortField, label: string }) => {
-    const config = sortConfigs.find(c => c.key === field);
-    const index = sortConfigs.findIndex(c => c.key === field);
-    
-    return (
-      <th 
-        className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-50 transition-colors select-none group"
-        onClick={(e) => handleSort(field, e)}
-        title="Shift+Click to sort by multiple columns"
-      >
-        <div className="flex items-center gap-1">
-          {label}
-          {config && (
-            <span className="flex items-center">
-              {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600" /> : <ArrowDown className="w-3 h-3 text-blue-600" />}
-              {sortConfigs.length > 1 && (
-                <span className="text-[10px] ml-0.5 text-blue-600 font-bold">{index + 1}</span>
-              )}
-            </span>
-          )}
-          {!config && (
-            <ArrowUp className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-          )}
-        </div>
-      </th>
-    );
-  };
-
-  return (
-    <div className="relative space-y-6 pb-20">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+  const renderControls = (isModal: boolean) => (
+    <div className={`flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white dark:bg-slate-900 p-4 ${isModal ? 'border-b border-slate-200 dark:border-slate-800' : 'rounded-xl shadow-sm border border-slate-200 dark:border-slate-800'}`}>
         <div>
-           <h2 className="text-xl font-bold text-slate-800 dark:text-white">Transaction Table</h2>
-           <p className="text-xs text-slate-500 mt-1">
-             Hold <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded">Shift</span> to sort by multiple columns. 
-           </p>
+           <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+             Transaction Table
+             {isModal && <span className="text-xs font-normal text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Fullscreen</span>}
+           </h2>
+           {!isModal && (
+             <p className="text-xs text-slate-500 mt-1">
+               Hold <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded">Shift</span> to sort by multiple columns. 
+             </p>
+           )}
         </div>
         
-        <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
+        <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto items-center">
           {/* Label Multi-Select */}
           <MultiSelectDropdown 
             label="Label"
@@ -198,7 +205,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ data, baseli
           />
 
           {/* Text Search */}
-          <div className="relative flex-1 sm:w-64">
+          <div className="relative flex-1 sm:w-64 w-full">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
             <input
               type="text"
@@ -209,103 +216,137 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ data, baseli
             />
           </div>
 
-          <button 
-            onClick={downloadCsv}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm text-sm font-medium whitespace-nowrap"
-            title="Download table as CSV"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
-        </div>
-      </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button 
+                onClick={downloadCsv}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm text-sm font-medium whitespace-nowrap"
+                title="Download table as CSV"
+            >
+                <Download className="w-4 h-4" />
+                <span className={isModal ? "" : "hidden xl:inline"}>Export CSV</span>
+            </button>
 
+            <button
+                onClick={() => setIsMaximized(!isMaximized)}
+                className={`p-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${isModal ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' : 'text-slate-500'}`}
+                title={isMaximized ? "Exit Fullscreen" : "Maximize View"}
+            >
+                {isMaximized ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
+    </div>
+  );
+
+  const renderTable = () => (
+      <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+        <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-10 shadow-sm">
+          <tr>
+            <SortableHeader field="label" label="Label" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="count" label="Samples" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="avgElapsed" label="Avg (ms)" sortConfigs={sortConfigs} onSort={handleSort} />
+            {baselineData && (
+                <SortableHeader field="avgDiff" label="Diff" sortConfigs={sortConfigs} onSort={handleSort} />
+            )}
+            <SortableHeader field="p50" label="Median (ms)" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="p90" label="90% (ms)" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="p95" label="95% (ms)" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="p99" label="99% (ms)" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="minElapsed" label="Min" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="maxElapsed" label="Max" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="errorRate" label="Error %" sortConfigs={sortConfigs} onSort={handleSort} />
+            <SortableHeader field="throughput" label="Thru (req/s)" sortConfigs={sortConfigs} onSort={handleSort} />
+          </tr>
+        </thead>
+        <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-800">
+          {filteredData.length > 0 ? (
+            filteredData.map((row, idx) => (
+              <tr 
+                key={idx} 
+                onClick={() => setSelectedLabelDetail(row.label)}
+                className={`
+                  cursor-pointer transition-colors
+                  ${selectedLabelDetail === row.label 
+                    ? 'bg-blue-50 dark:bg-blue-900/20' 
+                    : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }
+                `}
+              >
+                <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-300 break-all">{row.label}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.count.toLocaleString()}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.avgElapsed.toFixed(0)}</td>
+                
+                {/* Diff Column */}
+                {baselineData && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {row.hasBaseline ? (
+                            <span className={`flex items-center gap-1 font-semibold ${row.avgDiff > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {row.avgDiff > 0 ? '+' : ''}{row.avgDiff.toFixed(0)}
+                                {row.avgDiff > 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+                            </span>
+                        ) : (
+                            <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                )}
+
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.p50.toFixed(0)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400 font-semibold">{row.p90.toFixed(0)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.p95.toFixed(0)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.p99.toFixed(0)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.minElapsed}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.maxElapsed}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                    row.errorRate > 0 
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300' 
+                      : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                  }`}>
+                    {row.errorRate.toFixed(2)}%
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.throughput.toFixed(2)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan={baselineData ? 12 : 11} className="px-6 py-10 text-center text-sm text-slate-500">
+                No transactions match your filters.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+  );
+
+  return (
+    <div className="relative space-y-6 pb-20">
+      
+      {/* Standard View */}
+      {renderControls(false)}
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-            <thead className="bg-slate-50 dark:bg-slate-800">
-              <tr>
-                <HeaderCell field="label" label="Label" />
-                <HeaderCell field="count" label="Samples" />
-                <HeaderCell field="avgElapsed" label="Avg (ms)" />
-                {baselineData && (
-                    <HeaderCell field="avgDiff" label="Diff" />
-                )}
-                <HeaderCell field="p50" label="Median (ms)" />
-                <HeaderCell field="p90" label="90% (ms)" />
-                <HeaderCell field="p95" label="95% (ms)" />
-                <HeaderCell field="p99" label="99% (ms)" />
-                <HeaderCell field="minElapsed" label="Min" />
-                <HeaderCell field="maxElapsed" label="Max" />
-                <HeaderCell field="errorRate" label="Error %" />
-                <HeaderCell field="throughput" label="Thru (req/s)" />
-              </tr>
-            </thead>
-            <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-800">
-              {filteredData.length > 0 ? (
-                filteredData.map((row, idx) => (
-                  <tr 
-                    key={idx} 
-                    onClick={() => setSelectedLabelDetail(row.label)}
-                    className={`
-                      cursor-pointer transition-colors
-                      ${selectedLabelDetail === row.label 
-                        ? 'bg-blue-50 dark:bg-blue-900/20' 
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-800'
-                      }
-                    `}
-                  >
-                    <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-300 break-all">{row.label}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.count.toLocaleString()}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.avgElapsed.toFixed(0)}</td>
-                    
-                    {/* Diff Column */}
-                    {baselineData && (
-                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {row.hasBaseline ? (
-                                <span className={`flex items-center gap-1 font-semibold ${row.avgDiff > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                    {row.avgDiff > 0 ? '+' : ''}{row.avgDiff.toFixed(0)}
-                                    {row.avgDiff > 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-                                </span>
-                            ) : (
-                                <span className="text-slate-300">-</span>
-                            )}
-                         </td>
-                    )}
-
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.p50.toFixed(0)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400 font-semibold">{row.p90.toFixed(0)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.p95.toFixed(0)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.p99.toFixed(0)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.minElapsed}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.maxElapsed}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        row.errorRate > 0 
-                          ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300' 
-                          : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                      }`}>
-                        {row.errorRate.toFixed(2)}%
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">{row.throughput.toFixed(2)}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={baselineData ? 12 : 11} className="px-6 py-10 text-center text-sm text-slate-500">
-                    No transactions match your filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+             {renderTable()}
         </div>
       </div>
 
-      {/* Transaction Detail Slide-over */}
+      {/* Maximized Overlay */}
+      {isMaximized && (
+        <div className="fixed inset-0 z-[60] bg-slate-50 dark:bg-slate-950 flex flex-col animate-in fade-in duration-200">
+           {renderControls(true)}
+           <div className="flex-1 overflow-hidden p-4">
+             <div className="h-full bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">
+                <div className="flex-1 overflow-auto">
+                    {renderTable()}
+                </div>
+             </div>
+           </div>
+        </div>
+      )}
+
+      {/* Transaction Detail Slide-over - High Z-Index to appear over maximized view */}
       {selectedLabelDetail && (
-        <div className="fixed inset-y-0 right-0 w-full sm:w-96 md:w-[600px] bg-white dark:bg-slate-900 shadow-2xl transform transition-transform duration-300 z-50 border-l border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-right">
+        <div className="fixed inset-y-0 right-0 w-full sm:w-96 md:w-[600px] bg-white dark:bg-slate-900 shadow-2xl transform transition-transform duration-300 z-[70] border-l border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-right">
           <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-white break-all">{selectedLabelDetail}</h3>

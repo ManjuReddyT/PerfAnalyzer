@@ -1,7 +1,6 @@
 
-
 import React, { useState, useMemo, useCallback } from 'react';
-import { ProcessedData, MetricDiff, JmeterRow } from '../types';
+import { ProcessedData, MetricDiff, JmeterRow, LabelStats } from '../types';
 import { 
   ResponseTimeTrendChart, 
   ThroughputChart, 
@@ -20,9 +19,9 @@ import { MultiSelectDropdown } from '../components/Inputs';
 import { 
   Activity, Clock, AlertTriangle, TrendingUp, Download, Printer, 
   ArrowRight, Settings, ChevronDown, ChevronUp, Filter, BarChart, 
-  AlertCircle, Layers, List, ArrowDown, ArrowUp, Save, Sliders, RotateCcw,
+  AlertCircle, Layers, List, ArrowDown, ArrowUp, Save, Target, RotateCcw,
   Bug, Search, RefreshCw, GitCompare, Code, FileText, MousePointerClick, ToggleLeft, ToggleRight,
-  Globe, Gauge, Users, Info
+  Globe, Gauge, Users, Info, CalendarRange, X, Maximize2, Minimize2
 } from 'lucide-react';
 import { formatDuration, analyzeRows, calculateComparison, generateLabelTimeSeries } from '../utils/analytics';
 import { TransactionsView } from './TransactionsView';
@@ -120,6 +119,49 @@ const TabButton = ({ id, label, icon: Icon, active, onClick }: any) => (
     {label}
   </button>
 );
+
+interface ChartCardProps {
+  title: React.ReactNode;
+  subtext?: React.ReactNode;
+  children: (isMaximized: boolean) => React.ReactNode;
+  action?: React.ReactNode;
+  defaultHeight?: number;
+}
+
+// Wrapper Component for Charts with Maximize Capability
+const ChartCard = ({ title, subtext, children, action, defaultHeight = 300 }: ChartCardProps) => {
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  return (
+    <div className={`
+      bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col transition-all duration-300
+      ${isMaximized ? 'fixed inset-0 z-[60] p-6' : 'p-6 relative'}
+    `}>
+        <div className="flex justify-between items-start mb-6 gap-4 flex-shrink-0">
+             <div>
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                  {title}
+                  {isMaximized && <span className="text-xs font-normal text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 ml-2">Fullscreen</span>}
+                </h3>
+                {subtext && <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">{subtext}</div>}
+             </div>
+             <div className="flex items-center gap-2">
+                {action}
+                <button
+                  onClick={() => setIsMaximized(!isMaximized)}
+                  className={`p-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${isMaximized ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' : 'text-slate-500'}`}
+                  title={isMaximized ? "Minimize" : "Maximize"}
+                >
+                  {isMaximized ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                </button>
+             </div>
+        </div>
+        <div className={`flex-1 min-h-0 w-full`}>
+            {children(isMaximized)}
+        </div>
+    </div>
+  );
+};
 
 const ErrorInspector = ({ failures }: { failures: JmeterRow[] }) => {
     const [searchTerm, setSearchTerm] = useState('');
@@ -268,6 +310,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>([]); // Empty = All
   const [selectedResponseCodes, setSelectedResponseCodes] = useState<string[]>([]); // Empty = All
   const [showThresholds, setShowThresholds] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
   const [selectedBaselineId, setSelectedBaselineId] = useState<string>(''); // Comparison Selection
   const [resourceFilter, setResourceFilter] = useState<'all' | 'requests' | 'transactions'>('all');
   
@@ -395,7 +438,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const regressionAnalysis = useMemo(() => {
     if (!baselineData || !comparison) return null;
     
-    const baselineMap = new Map(baselineData.labels.map(l => [l.label, l]));
+    const baselineMap = new Map<string, LabelStats>(baselineData.labels.map(l => [l.label, l]));
     const deltas = displayData.labels.map(curr => {
         const base = baselineMap.get(curr.label);
         if(!base) return null;
@@ -444,10 +487,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const startDateStr = new Date(summary.startTime).toLocaleString();
   const endDateStr = new Date(summary.endTime).toLocaleString();
 
+  const timeRangeLabel = useMemo(() => {
+    if (timelineRange) {
+        const start = new Date(timelineRange.start).toLocaleTimeString();
+        const end = new Date(timelineRange.end).toLocaleTimeString();
+        return `${start} - ${end}`;
+    }
+    return `Full Duration (${formatDuration(summary.duration)})`;
+  }, [timelineRange, summary.duration]);
+
   return (
     <div className="space-y-4 pb-12">
-      {/* Header Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+      {/* Header Actions Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
          <div className="flex flex-col gap-1">
             <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
                 Dashboard
@@ -528,119 +580,114 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
          </div>
       </div>
 
-      {/* Global Timeline Filter - Prominent Top Location */}
-      {data.timeSeries.length > 0 && (
-          <div className="bg-white dark:bg-slate-900 p-4 pb-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-             <div className="flex items-center justify-between mb-2">
-                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                    <Clock className="w-3 h-3" />
-                    Timeline Selection
-                 </h3>
-                 {timelineRange && (
-                    <button 
-                      onClick={handleResetTimeline}
-                      className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium text-slate-500 hover:text-blue-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-blue-400 rounded transition-colors"
-                    >
-                        <RotateCcw className="w-3 h-3" />
-                        Reset Range
-                    </button>
-                 )}
-             </div>
-             
-             <TimelineBrushChart key={timelineKey} data={data.timeSeries} onChange={handleTimelineChange} />
-             
-             {/* Time Info Badges - Moved inside Timeline Container */}
-             <div className="flex flex-wrap items-center justify-between gap-4 mt-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-mono">
-                <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-400 uppercase">Start:</span>
-                    <span className="text-slate-700 dark:text-slate-300">{startDateStr}</span>
-                </div>
-                 <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full">
-                    <Clock className="w-3 h-3 text-blue-500" />
-                    <span className="font-bold text-slate-700 dark:text-slate-300">{formatDuration(summary.duration)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-400 uppercase">End:</span>
-                    <span className="text-slate-700 dark:text-slate-300">{endDateStr}</span>
-                </div>
-             </div>
-          </div>
-      )}
-
-      {/* Control Bar: Compact Filter Toolbar */}
-      <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2 sm:gap-4 transition-all">
-         <div className="px-2 text-sm font-semibold text-slate-500 flex items-center gap-2">
-            <Sliders className="w-4 h-4" />
-            <span className="hidden sm:inline">Filters</span>
-         </div>
-         <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
+      {/* Unified Control Bar (Sticky) */}
+      <div className="sticky top-0 z-30 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 transition-all">
          
-         <div className="flex-1 flex flex-wrap items-center gap-2">
-            {/* Transaction Filter */}
-            <MultiSelectDropdown 
-                label="Transaction" 
-                icon={Filter}
-                options={uniqueLabels}
-                selected={selectedTransactions}
-                onChange={setSelectedTransactions}
-            />
+         {/* Main Toolbar Strip */}
+         <div className="p-3 flex flex-wrap items-center gap-2 sm:gap-4">
+            {/* Time Toggle */}
+            <button 
+               onClick={() => setShowTimeline(!showTimeline)}
+               className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${showTimeline || timelineRange ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400' : 'bg-transparent border-transparent text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+               title="Toggle Timeline View"
+            >
+               <CalendarRange className="w-4 h-4" />
+               <span>Time Range</span>
+               <span className="hidden sm:inline font-normal opacity-70 border-l border-current pl-2 ml-1 truncate max-w-[140px]">{timeRangeLabel}</span>
+               {showTimeline ? <ChevronUp className="w-3.5 h-3.5 opacity-50" /> : <ChevronDown className="w-3.5 h-3.5 opacity-50" />}
+            </button>
             
-            {/* Response Code Filter */}
-            <MultiSelectDropdown 
-                label="Code" 
-                icon={AlertCircle}
-                options={uniqueResponseCodes}
-                selected={selectedResponseCodes}
-                onChange={setSelectedResponseCodes}
-            />
+            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
 
-            {hasUrlData && (
-                <>
-                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block ml-2"></div>
-                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-slate-700">
-                    <button 
-                        onClick={() => setResourceFilter('all')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${resourceFilter === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                        title="Show All (Requests + Controllers)"
-                    >
-                        All
-                    </button>
-                    <button 
-                        onClick={() => setResourceFilter('requests')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${resourceFilter === 'requests' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                        title="Show Only HTTP Requests (Rows with URL)"
-                    >
-                        <Globe className="w-3 h-3" />
-                        Requests
-                    </button>
-                    <button 
-                        onClick={() => setResourceFilter('transactions')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${resourceFilter === 'transactions' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                        title="Show Only Transaction Controllers (Rows without URL)"
-                    >
-                        <Layers className="w-3 h-3" />
-                        Trans.
-                    </button>
-                </div>
-                </>
-            )}
+            {/* Filters */}
+            <div className="flex-1 flex flex-wrap items-center gap-2">
+                <MultiSelectDropdown 
+                    label="Transaction" 
+                    icon={Filter}
+                    options={uniqueLabels}
+                    selected={selectedTransactions}
+                    onChange={setSelectedTransactions}
+                />
+                
+                <MultiSelectDropdown 
+                    label="Code" 
+                    icon={AlertCircle}
+                    options={uniqueResponseCodes}
+                    selected={selectedResponseCodes}
+                    onChange={setSelectedResponseCodes}
+                />
+
+                {hasUrlData && (
+                    <div className="hidden md:flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-slate-700 ml-2">
+                        <button 
+                            onClick={() => setResourceFilter('all')}
+                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${resourceFilter === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        >
+                            All
+                        </button>
+                        <button 
+                            onClick={() => setResourceFilter('requests')}
+                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${resourceFilter === 'requests' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        >
+                            Requests
+                        </button>
+                        <button 
+                            onClick={() => setResourceFilter('transactions')}
+                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${resourceFilter === 'transactions' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        >
+                            Trans.
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Right Side Settings */}
+            <div className="flex items-center gap-2">
+                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
+                <button 
+                    onClick={() => setShowThresholds(!showThresholds)}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${showThresholds ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400' : 'bg-transparent border-transparent text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+                    title="Configure Thresholds"
+                >
+                    <Target className="w-4 h-4" />
+                    <span>Thresholds</span>
+                    {showThresholds ? <ChevronUp className="w-3.5 h-3.5 opacity-50" /> : <ChevronDown className="w-3.5 h-3.5 opacity-50" />}
+                </button>
+            </div>
          </div>
 
-         <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
-
-         <button 
-            onClick={() => setShowThresholds(!showThresholds)}
-            className={`flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-colors ${showThresholds ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400' : 'bg-transparent border-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-         >
-            <Settings className="w-4 h-4" />
-            <span className="hidden sm:inline">Thresholds</span>
-            {showThresholds ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-         </button>
-      </div>
-      
-      {/* Threshold Config Panel (Collapsible) */}
-      {showThresholds && (
-           <div className="px-6 py-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in slide-in-from-top-2">
+         {/* Collapsible Timeline Panel */}
+         {showTimeline && data.timeSeries.length > 0 && (
+              <div className="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-2">
+                 <div className="flex items-center justify-between mb-2">
+                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                        <CalendarRange className="w-3 h-3" />
+                        Select Range
+                     </span>
+                     {timelineRange && (
+                        <button 
+                          onClick={handleResetTimeline}
+                          className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium text-slate-500 hover:text-blue-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-blue-400 rounded transition-colors"
+                        >
+                            <RotateCcw className="w-3 h-3" />
+                            Reset
+                        </button>
+                     )}
+                 </div>
+                 <div className="h-[110px] w-full">
+                    <TimelineBrushChart key={timelineKey} data={data.timeSeries} onChange={handleTimelineChange} />
+                 </div>
+                 
+                 <div className="flex justify-between items-center mt-1 px-1">
+                    <span className="text-[10px] font-mono text-slate-400">{startDateStr}</span>
+                    <span className="text-[10px] font-mono text-slate-400">{endDateStr}</span>
+                 </div>
+              </div>
+         )}
+         
+         {/* Collapsible Threshold Panel */}
+         {showThresholds && (
+            <div className="px-4 pb-4 pt-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in slide-in-from-top-2">
               <div>
                 <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Response Time Threshold (ms) <span className="text-xs text-slate-400">(Apdex T)</span></label>
                 <input 
@@ -660,7 +707,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 />
               </div>
            </div>
-      )}
+         )}
+      </div>
 
       {/* Tabs Header */}
       <div className="border-b border-slate-200 dark:border-slate-800 flex overflow-x-auto no-scrollbar">
@@ -748,167 +796,152 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
              {/* Regression Analysis (Only if Baseline Loaded) */}
             {regressionAnalysis && regressionAnalysis.regressions.length > 0 && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                        <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-4 flex items-center gap-2">
-                           <ArrowUp className="w-5 h-5" /> Top 5 Performance Regressions
-                        </h3>
-                        <p className="text-sm text-slate-500 mb-4">Transactions that slowed down the most compared to baseline.</p>
-                        <DeltaBarChart data={regressionAnalysis.regressions} />
-                    </div>
-                     <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                        <h3 className="text-lg font-semibold text-green-600 dark:text-green-400 mb-4 flex items-center gap-2">
-                           <ArrowDown className="w-5 h-5" /> Top 5 Performance Improvements
-                        </h3>
-                         <p className="text-sm text-slate-500 mb-4">Transactions that became faster compared to baseline.</p>
-                        <DeltaBarChart data={regressionAnalysis.improvements} />
-                    </div>
+                    <ChartCard title={<span className="text-red-600 dark:text-red-400 flex items-center gap-2"><ArrowUp className="w-5 h-5" /> Top 5 Regressions</span>} subtext="Transactions that slowed down the most vs baseline.">
+                       {(isMaximized) => <DeltaBarChart data={regressionAnalysis.regressions} height={isMaximized ? "100%" : 300} />}
+                    </ChartCard>
+                    <ChartCard title={<span className="text-green-600 dark:text-green-400 flex items-center gap-2"><ArrowDown className="w-5 h-5" /> Top 5 Improvements</span>} subtext="Transactions that became faster vs baseline.">
+                       {(isMaximized) => <DeltaBarChart data={regressionAnalysis.improvements} height={isMaximized ? "100%" : 300} />}
+                    </ChartCard>
                 </div>
             )}
 
             {/* Main Trend Chart - removed brush since we have global brush now */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Response Time vs Active Users</h3>
-              </div>
-              <ResponseTimeTrendChart 
-                data={displayData.timeSeries} 
-                enableBrush={false} 
-                threshold={thresholds.responseTime} 
-                baselineData={baselineData?.timeSeries} 
-              />
-            </div>
+            <ChartCard title="Response Time vs Active Users" defaultHeight={400}>
+              {(isMaximized) => (
+                <ResponseTimeTrendChart 
+                    data={displayData.timeSeries} 
+                    enableBrush={false} 
+                    threshold={thresholds.responseTime} 
+                    baselineData={baselineData?.timeSeries}
+                    height={isMaximized ? "100%" : 400} 
+                />
+              )}
+            </ChartCard>
             
              {/* Distribution */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-              <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-6">Response Time Distribution</h3>
-              <HistogramChart data={displayData.distribution} />
-            </div>
+             <ChartCard title="Response Time Distribution" defaultHeight={300}>
+               {(isMaximized) => <HistogramChart data={displayData.distribution} height={isMaximized ? "100%" : 300} />}
+             </ChartCard>
           </div>
         )}
 
         {/* === CHARTS TAB === */}
         {activeTab === 'charts' && (
            <div className="space-y-6 pt-4">
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                     <div>
-                        <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Response Time Analysis</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                          {chartMode === 'aggregate' ? 'Showing percentiles for aggregate traffic.' : 'Comparing Average Response Time per transaction.'}
-                        </p>
-                     </div>
-                     <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-slate-700">
-                         <button 
-                            onClick={() => setChartMode('aggregate')}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${chartMode === 'aggregate' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                         >
-                            <BarChart className="w-3.5 h-3.5" />
-                            Aggregate Stats
-                         </button>
-                         <button 
-                            onClick={() => setChartMode('byLabel')}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${chartMode === 'byLabel' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
-                         >
-                            <List className="w-3.5 h-3.5" />
-                            Compare Labels
-                         </button>
-                     </div>
-                 </div>
-                 
-                 {chartMode === 'aggregate' ? (
-                     <ResponseTimeChart data={displayData.timeSeries} threshold={thresholds.responseTime} />
-                 ) : (
-                     <div className="relative">
-                         {labelChartData.series.length === 0 ? (
-                             <div className="h-[400px] flex items-center justify-center text-slate-400">
-                                 No data available for selected filters.
-                             </div>
-                         ) : (
-                             <ResponseTimeChart 
-                                data={labelChartData.data} 
-                                series={labelChartData.series} 
-                                threshold={thresholds.responseTime} 
-                             />
-                         )}
-                         {/* Legend Hint for Comparison Mode */}
-                         <div className="text-xs text-center text-slate-400 mt-2">
-                             Showing Average Response Time for top/selected transactions.
-                         </div>
-                     </div>
+              <ChartCard 
+                  title="Response Time Analysis" 
+                  subtext={chartMode === 'aggregate' ? 'Showing percentiles for aggregate traffic.' : 'Comparing Average Response Time per transaction.'}
+                  defaultHeight={400}
+                  action={
+                    <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-slate-700 mr-2">
+                        <button 
+                        onClick={() => setChartMode('aggregate')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${chartMode === 'aggregate' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        >
+                        <BarChart className="w-3.5 h-3.5" />
+                        Aggregate
+                        </button>
+                        <button 
+                        onClick={() => setChartMode('byLabel')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${chartMode === 'byLabel' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        >
+                        <List className="w-3.5 h-3.5" />
+                        Labels
+                        </button>
+                    </div>
+                  }
+              >
+                 {(isMaximized) => (
+                    <>
+                    {chartMode === 'aggregate' ? (
+                        <ResponseTimeChart data={displayData.timeSeries} threshold={thresholds.responseTime} height={isMaximized ? "100%" : 400} />
+                    ) : (
+                        <div className="relative h-full">
+                            {labelChartData.series.length === 0 ? (
+                                <div className="h-full flex items-center justify-center text-slate-400">
+                                    No data available for selected filters.
+                                </div>
+                            ) : (
+                                <ResponseTimeChart 
+                                   data={labelChartData.data} 
+                                   series={labelChartData.series} 
+                                   threshold={thresholds.responseTime}
+                                   height={isMaximized ? "100%" : 400} 
+                                />
+                            )}
+                        </div>
+                    )}
+                    </>
                  )}
-              </div>
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-6">Throughput (Hits per Second)</h3>
-                 <ThroughputChart data={displayData.timeSeries} />
-              </div>
+              </ChartCard>
+
+              <ChartCard title="Throughput (Hits per Second)" defaultHeight={300}>
+                 {(isMaximized) => <ThroughputChart data={displayData.timeSeries} height={isMaximized ? "100%" : 300} />}
+              </ChartCard>
            </div>
         )}
 
         {/* === CAPACITY ANALYSIS TAB === */}
         {activeTab === 'capacity' && (
            <div className="space-y-6 pt-4">
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-                        <Users className="w-5 h-5 text-indigo-500" />
-                        Scalability Analysis (Active Users vs Response Time)
-                    </h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
-                        This scatter plot helps identify the <strong>"Knee of the Curve"</strong>. It shows how Average Response Time (Y-Axis) changes as the number of Active Users (X-Axis) increases. A sharp upward trend indicates the system's capacity limit.
-                    </p>
-                 </div>
-                 {displayData.capacitySeries.length > 0 ? (
+              <ChartCard 
+                title={
+                    <span className="flex items-center gap-2">
+                         <Users className="w-5 h-5 text-indigo-500" />
+                         Scalability Analysis (Active Users vs Response Time)
+                    </span>
+                }
+                subtext="Identify the 'Knee of the Curve' where response time degrades non-linearly."
+                defaultHeight={400}
+              >
+                 {(isMaximized) => displayData.capacitySeries.length > 0 ? (
                     <CapacityScatterChart 
                         data={displayData.capacitySeries} 
                         yKey="avgResponseTime" 
                         yLabel="Avg Response Time (ms)" 
-                        color="#6366f1" 
+                        color="#6366f1"
+                        height={isMaximized ? "100%" : 400} 
                     />
                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
+                    <div className="h-full min-h-[300px] flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
                         Insufficient data to generate capacity analysis. Ensure your log file includes thread counts.
                     </div>
                  )}
-              </div>
+              </ChartCard>
 
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+              <ChartCard 
+                title={
+                    <span className="flex items-center gap-2">
                         <TrendingUp className="w-5 h-5 text-emerald-500" />
                         Throughput Efficiency (Active Users vs Hits/s)
-                    </h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
-                        This chart visualizes where the system stops scaling. Ideally, throughput should increase linearly with users. If throughput plateaus or drops while users increase, you have hit a bottleneck.
-                    </p>
-                 </div>
-                 {displayData.capacitySeries.length > 0 ? (
+                    </span>
+                }
+                subtext="Visualizes where throughput plateaus while users increase (Scalability limit)."
+                defaultHeight={400}
+              >
+                 {(isMaximized) => displayData.capacitySeries.length > 0 ? (
                     <CapacityScatterChart 
                         data={displayData.capacitySeries} 
                         yKey="throughput" 
                         yLabel="Throughput (req/s)" 
-                        color="#10b981" 
+                        color="#10b981"
+                        height={isMaximized ? "100%" : 400} 
                     />
                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
+                    <div className="h-full min-h-[300px] flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
                         Insufficient data.
                     </div>
                  )}
-              </div>
+              </ChartCard>
            </div>
         )}
 
         {/* === TRANSACTION TIME TAB === */}
         {activeTab === 'time' && (
            <div className="space-y-6 pt-4">
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Transaction Performance Over Time</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                      Showing Average, P50, P90, and P99 response times for the currently filtered selection.
-                    </p>
-                 </div>
-                 <TransactionTimeChart data={displayData.timeSeries} />
-              </div>
+              <ChartCard title="Transaction Performance Over Time" subtext="Average, P50, P90, and P99 response times." defaultHeight={400}>
+                 {(isMaximized) => <TransactionTimeChart data={displayData.timeSeries} height={isMaximized ? "100%" : 400} />}
+              </ChartCard>
            </div>
         )}
 
@@ -924,29 +957,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                     <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-slate-100">Error Rate (%) Over Time</h3>
-                     <ErrorRateChart data={displayData.timeSeries} threshold={thresholds.errorRate} />
-                </div>
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                     <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-slate-100">Error Count Over Time</h3>
-                     <ErrorTrendChart data={displayData.timeSeries} />
-                </div>
+                <ChartCard title="Error Rate (%) Over Time" defaultHeight={300}>
+                     {(isMaximized) => <ErrorRateChart data={displayData.timeSeries} threshold={thresholds.errorRate} height={isMaximized ? "100%" : 300} />}
+                </ChartCard>
+                <ChartCard title="Error Count Over Time" defaultHeight={300}>
+                     {(isMaximized) => <ErrorTrendChart data={displayData.timeSeries} height={isMaximized ? "100%" : 300} />}
+                </ChartCard>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-               <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-slate-100">Error Distribution</h3>
-                 {displayData.errors.length > 0 ? (
-                   <PieDistributionChart data={displayData.errors.map(e => ({ name: e.message.substring(0, 50), value: e.count }))} />
+               <ChartCard title="Error Distribution" defaultHeight={300}>
+                 {(isMaximized) => displayData.errors.length > 0 ? (
+                   <PieDistributionChart data={displayData.errors.map(e => ({ name: e.message.substring(0, 50), value: e.count }))} height={isMaximized ? "100%" : 300} />
                  ) : (
                    <div className="text-center text-slate-400 py-10">No Errors Found</div>
                  )}
-               </div>
-               <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-slate-100">HTTP Response Codes</h3>
-                 <PieDistributionChart data={displayData.responseCodes.map(c => ({ name: `HTTP ${c.code}`, value: c.count }))} />
-               </div>
+               </ChartCard>
+               <ChartCard title="HTTP Response Codes" defaultHeight={300}>
+                 {(isMaximized) => <PieDistributionChart data={displayData.responseCodes.map(c => ({ name: `HTTP ${c.code}`, value: c.count }))} height={isMaximized ? "100%" : 300} />}
+               </ChartCard>
             </div>
 
             {/* Error Tables */}
@@ -1019,10 +1048,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* === LATENCY TAB === */}
         {activeTab === 'latency' && (
            <div className="space-y-6 pt-4">
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                 <div className="mb-4 text-sm text-slate-500 dark:text-slate-400">Breakdown of network connection time vs server latency over time.</div>
-                 <LatencyCompositionChart data={displayData.timeSeries} />
-              </div>
+              <ChartCard title="Latency Composition" subtext="Breakdown of network connection time vs server latency over time." defaultHeight={300}>
+                 {(isMaximized) => <LatencyCompositionChart data={displayData.timeSeries} height={isMaximized ? "100%" : 300} />}
+              </ChartCard>
            </div>
         )}
 
