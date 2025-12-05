@@ -1,4 +1,3 @@
-
 # PerfAnalyzer
 
 **PerfAnalyzer** is a professional, browser-based performance testing results analyzer. It allows engineers to analyze JTL (JMeter), CSV, and JSON test results instantly without server-side processing. It features a local-first architecture, ensuring data privacy while offering enterprise-grade reporting, baseline comparisons, and live test monitoring.
@@ -11,6 +10,10 @@
 ## 🚀 Key Features
 
 *   **Local-First Analysis**: Process multi-gigabyte JTL/CSV files entirely in the browser using Web Workers (no data upload).
+*   **Interactive Dashboards**: 
+    *   **Global Time Range**: Filter all charts and metrics by a specific time window.
+    *   **Threshold Config**: Dynamically adjust APDEX and Error Rate thresholds to immediately see impact on scores.
+    *   **Drill-down**: Visual dual-axis correlation (Response Time vs Users) and latency composition.
 *   **Baseline Comparison**: Upload a previous test run (Baseline) alongside your current run to visualize regressions, improvements, and metric deltas.
 *   **Live Monitoring**: Watch active test files in real-time (Log Tailing) using the File System Access API.
 *   **Hybrid AI Reporting & Chat**: 

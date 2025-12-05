@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Activity, CheckCircle, BarChart2, Shield, Github, FileText, Zap, Sparkles, Scale, Eye, Save, Settings } from 'lucide-react';
 
@@ -29,7 +28,7 @@ export const AboutView: React.FC = () => {
             </li>
              <li className="flex items-start gap-3 text-slate-600 dark:text-slate-300">
               <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-              <span><strong>Interactive Dashboards:</strong> Zoomable timeline filters, dual-axis load correlation, and latency composition charts.</span>
+              <span><strong>Interactive Dashboards:</strong> Global time-range filtering, configurable APDEX thresholds, and dual-axis load correlation charts.</span>
             </li>
             <li className="flex items-start gap-3 text-slate-600 dark:text-slate-300">
               <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
@@ -93,7 +92,7 @@ export const AboutView: React.FC = () => {
             Documentation
           </a>
         </div>
-        <p className="text-xs text-slate-400 mt-6">Version 1.2.1</p>
+        <p className="text-xs text-slate-400 mt-6">Version 1.3.0</p>
       </div>
     </div>
   );
