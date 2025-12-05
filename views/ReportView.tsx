@@ -70,6 +70,128 @@ export const ReportView: React.FC<ReportViewProps> = ({ data, baselineData, thre
       }
   };
 
+  // Improved Markdown Renderer
+  const renderMarkdown = (text: string) => {
+    if (!text) return null;
+    
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let tableBuffer: string[] = [];
+    let inTable = false;
+
+    const flushTable = (keyIdx: number) => {
+        if (tableBuffer.length === 0) return;
+        
+        try {
+            // Parse table rows: Split by pipe, trim whitespace
+            // Filter handles lines that start/end with pipe e.g. | col | col |
+            const rows = tableBuffer.map(row => 
+                row.split('|')
+                .map(cell => cell.trim())
+                .filter((cell, i, arr) => {
+                    // Filter out empty strings that result from splitting leading/trailing pipes
+                    // Standard markdown table lines usually start and end with |
+                    if (i === 0 && cell === '') return false;
+                    if (i === arr.length - 1 && cell === '') return false;
+                    return true;
+                })
+            );
+
+            // Filter out separator lines (e.g., ---, :---)
+            const validRows = rows.filter(row => !row.every(cell => /^[\s\-:]+$/.test(cell)));
+
+            if (validRows.length > 0) {
+                const headers = validRows[0];
+                const body = validRows.slice(1);
+
+                elements.push(
+                    <div key={`tbl-${keyIdx}`} className="overflow-x-auto my-4 border border-slate-200 rounded-lg">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-slate-50">
+                                <tr>
+                                    {headers.map((h, i) => (
+                                        <th key={i} className="px-4 py-2 text-left font-semibold text-slate-600 uppercase text-xs tracking-wider border-r border-slate-200 last:border-0 bg-slate-50">
+                                            {h}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-slate-200">
+                                {body.map((row, rI) => (
+                                    <tr key={rI} className="hover:bg-slate-50/50">
+                                        {row.map((cell, cI) => (
+                                            <td key={cI} className="px-4 py-2 text-slate-700 border-r border-slate-200 last:border-0">
+                                                <span dangerouslySetInnerHTML={{ __html: processInline(cell) }} />
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+            }
+        } catch (e) {
+            // Fallback if table parse fails
+            elements.push(<pre key={`pre-${keyIdx}`} className="text-xs bg-slate-50 p-2 rounded overflow-x-auto">{tableBuffer.join('\n')}</pre>);
+        }
+        
+        tableBuffer = [];
+        inTable = false;
+    };
+
+    const processInline = (str: string) => {
+        return str
+            .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>')
+            .replace(/`(.*?)`/g, '<code class="bg-slate-100 px-1 py-0.5 rounded text-pink-600 font-mono text-xs">$1</code>');
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Table Detection (Simple pipe check)
+        if (line.startsWith('|') && line.endsWith('|')) {
+            inTable = true;
+            tableBuffer.push(line);
+            continue;
+        } else if (inTable) {
+            flushTable(i);
+        }
+
+        if (!line) {
+             elements.push(<div key={`br-${i}`} className="h-2" />);
+             continue;
+        }
+
+        // Headers
+        if (line.startsWith('## ')) {
+             elements.push(<h2 key={`h2-${i}`} className="text-xl font-bold mt-6 mb-3 text-slate-900 border-b border-slate-100 pb-2">{line.replace('## ', '')}</h2>);
+             continue;
+        }
+        if (line.startsWith('### ')) {
+             elements.push(<h3 key={`h3-${i}`} className="text-lg font-bold mt-4 mb-2 text-slate-800">{line.replace('### ', '')}</h3>);
+             continue;
+        }
+
+        // Lists
+        if (line.startsWith('- ') || line.startsWith('* ')) {
+            const content = line.substring(2);
+            elements.push(
+                <li key={`li-${i}`} className="ml-5 list-disc mb-1 text-slate-700 pl-1" dangerouslySetInnerHTML={{ __html: processInline(content) }} />
+            );
+            continue;
+        }
+
+        // Paragraphs
+        elements.push(<p key={`p-${i}`} className="mb-2 text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: processInline(line) }} />);
+    }
+    
+    // Flush remaining table buffer if exists
+    if (inTable) flushTable(lines.length);
+
+    return elements;
+  };
+
   // Get Top 5 Slowest Transactions
   const topSlowest = [...data.labels]
     .sort((a, b) => b.avgElapsed - a.avgElapsed)
@@ -242,13 +364,8 @@ export const ReportView: React.FC<ReportViewProps> = ({ data, baselineData, thre
           <div className="mb-8 bg-slate-50 p-6 rounded-lg border border-slate-200 break-inside-avoid">
             <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">Executive Summary</h3>
             <div className="text-slate-800 whitespace-pre-wrap leading-relaxed prose prose-sm max-w-none">
-                {/* Simple Markdown Rendering for AI Output */}
-                {observations.split('\n').map((line, i) => {
-                    if (line.startsWith('## ')) return <h2 key={i} className="text-xl font-bold mt-4 mb-2">{line.replace('## ', '')}</h2>;
-                    if (line.startsWith('### ')) return <h3 key={i} className="text-lg font-bold mt-3 mb-1">{line.replace('### ', '')}</h3>;
-                    if (line.startsWith('- ')) return <li key={i} className="ml-4 list-disc">{line.replace('- ', '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</li>;
-                    return <p key={i} className="mb-2" dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />;
-                })}
+                {/* Improved Markdown Rendering */}
+                {renderMarkdown(observations)}
             </div>
           </div>
         )}
