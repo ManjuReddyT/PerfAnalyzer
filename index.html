@@ -3,75 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PerfAnalyzer - JMeter Report Viewer</title>
+    <title>PerfAnalyzer — local JMeter report viewer</title>
+    <meta name="description" content="Read JMeter JTL and CSV reports in the browser. Compare runs and find the slow path. Files stay on the machine." />
+    <link rel="canonical" href="https://perf.sreroot.com/" />
+    <meta property="og:title" content="PerfAnalyzer — local JMeter report viewer" />
+    <meta property="og:description" content="Read JMeter JTL and CSV reports in the browser. Compare runs and find the slow path. Files stay on the machine." />
+    <meta property="og:url" content="https://perf.sreroot.com/" />
+    <meta property="og:type" content="website" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            colors: {
-              slate: {
-                850: '#1e293b', // Custom darker slate for panels
-              }
-            }
-          }
-        }
-      }
+      tailwind.config = { darkMode: 'class', theme: { extend: { colors: { slate: { 850: '#1e293b' } } } } }
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
-      /* Custom Scrollbar for cleaner look */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #f1f5f9;
-      }
-      .dark ::-webkit-scrollbar-track {
-        background: #0f172a;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-      }
-      .dark ::-webkit-scrollbar-thumb {
-        background: #475569;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-      }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: #f1f5f9; }
+      .dark ::-webkit-scrollbar-track { background: #0f172a; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+      .dark ::-webkit-scrollbar-thumb { background: #475569; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
       @media print {
-        @page {
-          margin: 1cm;
-          size: auto;
-        }
-        body {
-          background: white;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        aside, .no-print {
-          display: none !important;
-        }
-        main {
-          overflow: visible !important;
-          height: auto !important;
-        }
-        /* Ensure charts don't break awkwardly */
-        .print-break-avoid {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-        /* Force single column for grid in print to avoid cutting off */
-        .print-grid-1 {
-          grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
-        }
-        .print-shadow-none {
-            box-shadow: none !important;
-            border: 1px solid #e2e8f0 !important;
-        }
+        @page { margin: 1cm; size: auto; }
+        body { background: white; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        aside, .no-print { display: none !important; }
+        main { overflow: visible !important; height: auto !important; }
+        .print-break-avoid { break-inside: avoid; page-break-inside: avoid; }
+        .print-grid-1 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+        .print-shadow-none { box-shadow: none !important; border: 1px solid #e2e8f0 !important; }
       }
     </style>
 <script type="importmap">
@@ -91,6 +49,7 @@
 </script>
 </head>
   <body class="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 transition-colors duration-200">
+    <noscript><h1>PerfAnalyzer</h1><p>Local JMeter report viewer. Compare runs and find the slow path. Files stay on the machine.</p></noscript>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
